@@ -27,12 +27,13 @@ else
 fi
 
 # This version's CHANGELOG.md section as simple HTML for the update window.
+# A literal ]]> in the notes would end the CDATA early, so the last sed splits it across two sections.
 NOTES="$(awk -v v="$VERSION" '/^## /{p = ($2 == v); next} p' CHANGELOG.md | awk '
     /^- /   { if (li) print "</li>"; if (!ul) { print "<ul>"; ul = 1 }; printf "<li>%s", substr($0, 3); li = 1; next }
     /^  +/  { if (li) { sub(/^ +/, ""); printf " %s", $0; next } }
     /^$/    { if (li) { print "</li>"; li = 0 }; if (ul) { print "</ul>"; ul = 0 }; next }
             { if (li) { print "</li>"; li = 0 }; if (ul) { print "</ul>"; ul = 0 }; print "<p>" $0 "</p>" }
-    END     { if (li) print "</li>"; if (ul) print "</ul>" }' | sed -E 's/`([^`]*)`/<code>\1<\/code>/g')"
+    END     { if (li) print "</li>"; if (ul) print "</ul>" }' | sed -E 's/`([^`]*)`/<code>\1<\/code>/g' | sed -E 's/\]\]>/]]]]><![CDATA[>/g')"
 
 PUB_DATE="$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")"
 

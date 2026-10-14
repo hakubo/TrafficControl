@@ -119,7 +119,7 @@ public struct LinkHistory: Codable, Equatable, Sendable {
     /// The host without a leading "www.", for http(s) links only.
     public static func domain(for url: URL) -> String? {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              var host = url.host()?.lowercased(), !host.isEmpty
+            var host = url.host()?.lowercased(), !host.isEmpty
         else { return nil }
         if host.hasPrefix("www.") { host.removeFirst(4) }
         return host
@@ -133,8 +133,9 @@ public struct LinkHistory: Codable, Equatable, Sendable {
     public func preferred(for url: URL) -> LinkDestination? {
         guard let record = record(for: url) else { return nil }
         if let segment = Self.firstSegment(of: url),
-           let path = record.paths.first(where: { $0.segment == segment }),
-           let preferred = path.preferred {
+            let path = record.paths.first(where: { $0.segment == segment }),
+            let preferred = path.preferred
+        {
             return preferred
         }
         return record.preferred
@@ -149,20 +150,25 @@ public struct LinkHistory: Codable, Equatable, Sendable {
         records.values.sorted { $0.lastOpened > $1.lastOpened }
     }
 
-    public mutating func record(_ url: URL, destination: LinkDestination, at date: Date = Date()) {
+    /// Tallies the link's domain. Its first path segment (often a username) is kept only for a link
+    /// `picked` in the picker that went somewhere other than the domain usually goes, since that's
+    /// all a path entry is for: preselecting a different choice for that path next time.
+    public mutating func record(_ url: URL, destination: LinkDestination, picked: Bool = false, at date: Date = Date()) {
         guard let domain = Self.domain(for: url) else { return }
         var entry = records[domain] ?? DomainRecord(domain: domain, date: date)
+        let usual = entry.preferred
         entry.tally(destination, at: date)
-        if let segment = Self.firstSegment(of: url) {
+        if picked, let segment = Self.firstSegment(of: url) {
             if let i = entry.paths.firstIndex(where: { $0.segment == segment }) {
                 entry.paths[i].tally(destination, at: date)
-            } else {
+            } else if let usual, usual != destination {
                 var path = PathRecord(segment: segment, visits: 0, lastOpened: date, lastDestination: nil, destinations: [])
                 path.tally(destination, at: date)
                 entry.paths.append(path)
             }
             if entry.paths.count > DomainRecord.pathLimit,
-               let oldest = entry.paths.indices.min(by: { entry.paths[$0].lastOpened < entry.paths[$1].lastOpened }) {
+                let oldest = entry.paths.indices.min(by: { entry.paths[$0].lastOpened < entry.paths[$1].lastOpened })
+            {
                 entry.paths.remove(at: oldest)
             }
             entry.paths.sort { $0.visits > $1.visits }
@@ -171,6 +177,14 @@ public struct LinkHistory: Codable, Equatable, Sendable {
 
         if records.count > Self.limit, let oldest = records.values.min(by: { $0.lastOpened < $1.lastOpened }) {
             records[oldest.domain] = nil
+        }
+    }
+
+    /// Drops path entries that preselect the same thing as their domain. Up to 0.1.6 every link
+    /// added one, rule-routed links included; they're still decoded, just not kept without a reason.
+    public mutating func dropRedundantPaths() {
+        for (domain, entry) in records where !entry.paths.isEmpty {
+            records[domain]?.paths.removeAll { $0.preferred == entry.preferred }
         }
     }
 
@@ -219,8 +233,9 @@ public struct HistoryStore: Sendable {
 
     public func load() -> LinkHistory {
         guard let data = try? Data(contentsOf: fileURL),
-              let history = try? JSONDecoder().decode(LinkHistory.self, from: data)
+            var history = try? JSONDecoder().decode(LinkHistory.self, from: data)
         else { return LinkHistory() }
+        history.dropRedundantPaths()
         return history
     }
 

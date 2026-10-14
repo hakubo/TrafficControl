@@ -2,7 +2,7 @@ DEVTOOLS := /Library/Developer/CommandLineTools/Library/Developer
 INSTALL_DIR ?= $(HOME)/Applications
 LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
-.PHONY: app package icon install run test clean
+.PHONY: app package icon install run test lint clean
 
 app:
 	bash scripts/build-app.sh
@@ -31,6 +31,9 @@ test:
 		swift test -Xswiftc -F$(DEVTOOLS)/Frameworks -Xlinker -F$(DEVTOOLS)/Frameworks \
 			-Xlinker -rpath -Xlinker $(DEVTOOLS)/Frameworks -Xlinker -rpath -Xlinker $(DEVTOOLS)/usr/lib; \
 	else swift test; fi
+
+lint:
+	swift format lint --strict --recursive Sources Tests Package.swift
 
 clean:
 	rm -rf .build build dist

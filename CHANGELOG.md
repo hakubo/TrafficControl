@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.0
+
+- Send all links to one browser or profile for an hour from the menu bar ("Send All Links To"),
+  handy during screen shares. Holding the picker key still shows the picker. Relaunching clears it.
+- New menu bar icon: a control tower instead of the generic branch symbol.
+- Picker: ⇧ + a number opens that choice in the background again. Moving the mouse no longer changes
+  which browser Return opens; hover gets its own lighter highlight. Hover the link to see the full
+  address. The key hint shows for the first few opens, then moves behind a ? icon. Tiles work with VoiceOver.
+- Settings → General shows which browsers allow TrafficControl to check their open tabs, with a
+  Set up now button to ask at a moment you choose and a link to the Automation settings.
+- Settings tells you when Launch at login is waiting for your approval, and when Behaviour is
+  "primary browser" but no primary browser is set.
+- Rules: a regex that doesn't compile gets a red note, and a rule that an earlier rule already
+  catches gets a hint. ⌫ deletes the selected rule. The rules list is resizable.
+- Browsers installed while TrafficControl is running show up without a Refresh button.
+- History records a link's path only when you pick a different browser for that path than the rest
+  of the domain, so it no longer keeps usernames from every GitHub or LinkedIn link.
+- Open Link from Clipboard no longer reads the clipboard every time the menu opens.
+- The Settings window remembers its size and position and fits a 13-inch screen.
+- A browser that denied Automation access isn't asked again on every click until relaunch.
+- Respects Reduce Motion. Faster routing: regexes, icons and AppleScripts are cached, and history
+  is saved in the background.
+- The website loads its fonts itself and no longer loads the Buy Me a Coffee widget.
+
 ## 0.1.6
 
 - Holding a key while clicking a link to get the picker now works reliably: TrafficControl looks at the

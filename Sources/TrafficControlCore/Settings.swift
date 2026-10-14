@@ -20,9 +20,8 @@ public enum DefaultBehavior: String, Codable, CaseIterable, Sendable, Hashable {
 public struct AppSettings: Codable, Equatable, Sendable {
     public var defaultBehavior: DefaultBehavior = .alwaysAsk
     public var primaryBrowser: BrowserTarget?
-    public var browserOrder: [String] = []
     /// Order of picker entries, where each profile of a multi-profile browser is its own entry.
-    /// Wins over `browserOrder`; entries missing from it keep their `browserOrder` place, after these.
+    /// A profile-less target orders every profile of that browser (see `sortedByChoiceOrder`).
     public var choiceOrder: [BrowserTarget] = []
     public var hiddenBrowserIDs: [String] = []
     public var hiddenProfiles: [BrowserTarget] = []
@@ -32,7 +31,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var showURLInPicker = true
     public var showMenuBarIcon = true
     /// Holding `pickerModifier` while clicking a link skips everything and shows the picker.
-    public var forcePickerWithOption = true
+    public var forcePickerWithKey = true
     public var pickerModifier = ModifierKey.shift
     public var rememberDomains = true
     public var tabReuse = TabReuseMode.anyBrowser
@@ -46,8 +45,14 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case defaultBehavior, primaryBrowser, browserOrder, choiceOrder, hiddenBrowserIDs, hiddenProfiles, rules, appLinkModes
-        case showURLInPicker, showMenuBarIcon, forcePickerWithOption, pickerModifier, rememberDomains, tabReuse
+        case defaultBehavior, primaryBrowser, choiceOrder, hiddenBrowserIDs, hiddenProfiles, rules, appLinkModes
+        case showURLInPicker, showMenuBarIcon, forcePickerWithKey = "forcePickerWithOption", pickerModifier, rememberDomains, tabReuse
+    }
+
+    /// Keys that are read but never written again.
+    private enum LegacyKeys: String, CodingKey {
+        /// Bundle IDs in picker order; superseded by `choiceOrder`.
+        case browserOrder
     }
 
     // Every key is optional so settings files written by older versions keep loading.
@@ -56,15 +61,22 @@ public struct AppSettings: Codable, Equatable, Sendable {
         let d = AppSettings()
         defaultBehavior = try c.decodeIfPresent(DefaultBehavior.self, forKey: .defaultBehavior) ?? d.defaultBehavior
         primaryBrowser = try c.decodeIfPresent(BrowserTarget.self, forKey: .primaryBrowser)
-        browserOrder = try c.decodeIfPresent([String].self, forKey: .browserOrder) ?? d.browserOrder
         choiceOrder = try c.decodeIfPresent([BrowserTarget].self, forKey: .choiceOrder) ?? d.choiceOrder
+        // Migrate the old bundle-ID order. Once `choiceOrder` exists it is complete (the UI writes
+        // every entry), so `browserOrder` only matters when `choiceOrder` is empty.
+        if choiceOrder.isEmpty,
+            let legacy = try? decoder.container(keyedBy: LegacyKeys.self),
+            let ids = try legacy.decodeIfPresent([String].self, forKey: .browserOrder)
+        {
+            choiceOrder = ids.map { BrowserTarget(browserID: $0) }
+        }
         hiddenBrowserIDs = try c.decodeIfPresent([String].self, forKey: .hiddenBrowserIDs) ?? d.hiddenBrowserIDs
         hiddenProfiles = try c.decodeIfPresent([BrowserTarget].self, forKey: .hiddenProfiles) ?? d.hiddenProfiles
         rules = try c.decodeIfPresent([Rule].self, forKey: .rules) ?? d.rules
         appLinkModes = try c.decodeIfPresent([String: AppLinkMode].self, forKey: .appLinkModes) ?? d.appLinkModes
         showURLInPicker = try c.decodeIfPresent(Bool.self, forKey: .showURLInPicker) ?? d.showURLInPicker
         showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? d.showMenuBarIcon
-        forcePickerWithOption = try c.decodeIfPresent(Bool.self, forKey: .forcePickerWithOption) ?? d.forcePickerWithOption
+        forcePickerWithKey = try c.decodeIfPresent(Bool.self, forKey: .forcePickerWithKey) ?? d.forcePickerWithKey
         pickerModifier = try c.decodeIfPresent(ModifierKey.self, forKey: .pickerModifier) ?? d.pickerModifier
         rememberDomains = try c.decodeIfPresent(Bool.self, forKey: .rememberDomains) ?? d.rememberDomains
         tabReuse = try c.decodeIfPresent(TabReuseMode.self, forKey: .tabReuse) ?? d.tabReuse
@@ -75,12 +87,16 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
 extension AppSettings {
     /// Sorts picker entries by `choiceOrder`. Entries it doesn't mention (a profile added since)
-    /// go last, keeping the order they came in.
+    /// go last, keeping the order they came in. A profile entry with no slot of its own takes its
+    /// browser's profile-less slot (how a migrated `browserOrder` is stored), keeping incoming order among siblings.
     public func sortedByChoiceOrder<T>(_ items: [T], target: (T) -> BrowserTarget) -> [T] {
         var rank: [BrowserTarget: Int] = [:]
         for (i, t) in choiceOrder.enumerated() where rank[t] == nil { rank[t] = i }
+        func slot(_ t: BrowserTarget) -> Int {
+            rank[t] ?? rank[BrowserTarget(browserID: t.browserID)] ?? Int.max
+        }
         return items.enumerated()
-            .sorted { (rank[target($0.element)] ?? Int.max, $0.offset) < (rank[target($1.element)] ?? Int.max, $1.offset) }
+            .sorted { (slot(target($0.element)), $0.offset) < (slot(target($1.element)), $1.offset) }
             .map(\.element)
     }
 
@@ -123,7 +139,7 @@ public struct SettingsStore: Sendable {
 
     public func load() -> AppSettings {
         guard let data = try? Data(contentsOf: fileURL),
-              let settings = try? JSONDecoder().decode(AppSettings.self, from: data)
+            let settings = try? JSONDecoder().decode(AppSettings.self, from: data)
         else { return AppSettings() }
         return settings
     }

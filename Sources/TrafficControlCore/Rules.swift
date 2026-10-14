@@ -176,11 +176,29 @@ public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable
     }
 
     static func matches(_ subject: String, regex pattern: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return false
-        }
+        guard let regex = RegexCache.shared.regex(for: pattern) else { return false }
         let range = NSRange(subject.startIndex..., in: subject)
         return regex.firstMatch(in: subject, range: range) != nil
+    }
+}
+
+/// Compiled case-insensitive regexes keyed by pattern. Failures are cached too (as nil) so an
+/// invalid pattern isn't recompiled on every click. Cleared when it grows past `limit`, since
+/// patterns come from user rules.
+final class RegexCache: @unchecked Sendable {
+    static let shared = RegexCache()
+    private let limit = 256
+    private let lock = NSLock()
+    private var cache: [String: NSRegularExpression?] = [:]
+
+    func regex(for pattern: String) -> NSRegularExpression? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let hit = cache[pattern] { return hit }
+        let compiled = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        if cache.count >= limit { cache.removeAll() }
+        cache[pattern] = .some(compiled)
+        return compiled
     }
 }
 
@@ -189,7 +207,7 @@ public enum LinkAddress {
     /// The whole address of an http(s) link, or nil for other schemes.
     public static func of(_ url: URL) -> String? {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              var host = url.host()?.lowercased(), !host.isEmpty
+            var host = url.host()?.lowercased(), !host.isEmpty
         else { return nil }
         if host.hasPrefix("www.") { host.removeFirst(4) }
         return host + url.path(percentEncoded: false)
@@ -254,6 +272,22 @@ public struct Condition: Codable, Identifiable, Equatable, Hashable, Sendable {
 }
 
 extension Condition {
+    /// Why a regex condition never matches, e.g. "expected ')'"; nil when the pattern compiles, is
+    /// empty, or the condition isn't a regex.
+    public var regexError: String? {
+        let pattern = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard op == .regex, !pattern.isEmpty,
+            RegexCache.shared.regex(for: pattern) == nil
+        else { return nil }
+        // NSRegularExpression only says the value is invalid; Swift's parser says why.
+        do {
+            _ = try Regex(pattern)
+            return "the pattern doesn't compile"
+        } catch {
+            return "\(error)"
+        }
+    }
+
     /// A 0.1.4 Link condition ("github.com/buffer", is or is under) as the equivalent Domain and Path
     /// conditions; nil for anything else.
     func splitIntoDomainAndPath() -> [Condition]? {
@@ -315,7 +349,8 @@ public struct Rule: Codable, Identifiable, Equatable, Hashable, Sendable {
         action = try c.decode(RuleAction.self, forKey: .action)
         let saved = try c.decode([Condition].self, forKey: .conditions)
         // Splitting one condition into two only means the same thing when all of them must match.
-        conditions = matchMode == .all || saved.count == 1
+        conditions =
+            matchMode == .all || saved.count == 1
             ? saved.flatMap { $0.splitIntoDomainAndPath() ?? [$0] }
             : saved
         if saved.count == 1, conditions.count > 1 { matchMode = .all }
@@ -328,5 +363,49 @@ public struct Rule: Codable, Identifiable, Equatable, Hashable, Sendable {
         case .all: return conditions.allSatisfy { $0.matches(context) }
         case .any: return conditions.contains { $0.matches(context) }
         }
+    }
+}
+
+extension Rule {
+    /// A link this rule matches that stands for every link it matches, built from its Domain and Path
+    /// conditions: Domain github.com plus Path /buffer gives https://github.com/buffer. Nil when one
+    /// link can't stand for the rule (regexes, partial text, source apps, keys, "any" of several).
+    public var sampleURL: URL? {
+        guard matchMode == .all || conditions.count == 1 else { return nil }
+        var host: String?
+        var path = ""
+        for condition in conditions {
+            let value = condition.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            switch (condition.field, condition.op) {
+            case (.host, .isDomain), (.host, .equals):
+                guard host == nil else { return nil }
+                host = LinkAddress.normalize(value.hasPrefix(".") ? String(value.dropFirst()) : value)
+            case (.path, .isUnder), (.path, .equals), (.path, .beginsWith):
+                guard path.isEmpty else { return nil }
+                path = value.hasPrefix("/") ? value : "/" + value
+            case (.address, .isUnder):
+                guard host == nil, path.isEmpty else { return nil }
+                (host, path) = ConditionOperator.split(LinkAddress.normalize(value))
+            default:
+                return nil
+            }
+        }
+        var enabled = self
+        enabled.isEnabled = true
+        guard let host, !host.isEmpty, !host.contains("/"),
+            let url = URL(string: "https://" + host + path),
+            enabled.matches(LinkContext(url: url))
+        else { return nil }
+        return url
+    }
+
+    /// The earlier enabled rule (and its index in `rules`) that already catches this rule's sample link,
+    /// so this rule never gets it. Nil when nothing comes first or the rule has no sample link.
+    public func shadowingRule(in rules: [Rule]) -> (index: Int, rule: Rule)? {
+        guard let url = sampleURL, let position = rules.firstIndex(where: { $0.id == id }),
+            let earlier = Router.firstMatchingRule(LinkContext(url: url), in: Array(rules[..<position])),
+            let index = rules.firstIndex(where: { $0.id == earlier.id })
+        else { return nil }
+        return (index, earlier)
     }
 }

@@ -1,5 +1,18 @@
 import Foundation
 
+/// "Send all links to X until a given time", set from the menu bar. Kept in memory only.
+public struct TemporaryOverride: Equatable, Sendable {
+    public var target: BrowserTarget
+    public var until: Date
+
+    public init(target: BrowserTarget, until: Date) {
+        self.target = target
+        self.until = until
+    }
+
+    public func isActive(at now: Date) -> Bool { now < until }
+}
+
 /// The state of the machine that routing depends on, gathered by the app at click time.
 public struct RoutingEnvironment: Sendable {
     public var installedBrowserIDs: Set<String>
@@ -12,6 +25,9 @@ public struct RoutingEnvironment: Sendable {
     public var lastActiveBrowserID: String?
     /// The user held the "always ask" modifier while clicking.
     public var forcePicker: Bool
+    public var override: TemporaryOverride?
+    /// The clock the override is checked against; injected so tests can move it.
+    public var now: Date
 
     public init(
         installedBrowserIDs: Set<String>,
@@ -20,7 +36,9 @@ public struct RoutingEnvironment: Sendable {
         installedAppIDs: Set<String> = [],
         runningAppIDs: Set<String> = [],
         lastActiveBrowserID: String? = nil,
-        forcePicker: Bool = false
+        forcePicker: Bool = false,
+        override: TemporaryOverride? = nil,
+        now: Date = Date()
     ) {
         self.installedBrowserIDs = installedBrowserIDs
         self.installedProfiles = installedProfiles
@@ -29,6 +47,8 @@ public struct RoutingEnvironment: Sendable {
         self.runningAppIDs = runningAppIDs
         self.lastActiveBrowserID = lastActiveBrowserID
         self.forcePicker = forcePicker
+        self.override = override
+        self.now = now
     }
 
     /// A profile that no longer exists must not be passed on: Chromium would create it as a new, empty profile.
@@ -55,6 +75,12 @@ public enum Router {
         environment env: RoutingEnvironment
     ) -> RoutingDecision {
         if env.forcePicker { return .ask }
+
+        // An active override beats desktop apps and rules: "everything" means everything. The picker key
+        // still wins, and an override whose browser or profile has gone falls back to normal routing.
+        if let override = env.override, override.isActive(at: env.now), env.canOpen(override.target) {
+            return .open(override.target, ruleID: nil)
+        }
 
         // Desktop apps come before rules: each one is an explicit opt-in with its own setting,
         // and a broad rule (say, everything from Slack goes to Chrome) shouldn't swallow it.

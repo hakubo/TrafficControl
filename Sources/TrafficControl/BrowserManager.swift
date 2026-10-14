@@ -7,7 +7,32 @@ struct Browser: Identifiable, Hashable {
     let name: String
     let appURL: URL
 
-    var icon: NSImage { NSWorkspace.shared.icon(forFile: appURL.path) }
+    var icon: NSImage { ImageCache.appIcon(atPath: appURL.path) }
+}
+
+/// App icons and profile avatars, so rendering and `orderedChoices` don't hit the disk every time.
+enum ImageCache {
+    private nonisolated(unsafe) static let icons = NSCache<NSString, NSImage>()
+    private nonisolated(unsafe) static let avatars = NSCache<NSString, NSImage>()
+
+    static func appIcon(atPath path: String) -> NSImage {
+        if let hit = icons.object(forKey: path as NSString) { return hit }
+        let icon = NSWorkspace.shared.icon(forFile: path)
+        icons.setObject(icon, forKey: path as NSString)
+        return icon
+    }
+
+    /// Keyed by path and modification date, so a changed picture is picked up.
+    static func avatar(atPath path: String?) -> NSImage? {
+        guard let path,
+            let modified = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+        else { return nil }
+        let key = "\(path)@\(modified.timeIntervalSince1970)" as NSString
+        if let hit = avatars.object(forKey: key) { return hit }
+        guard let image = NSImage(contentsOfFile: path) else { return nil }
+        avatars.setObject(image, forKey: key)
+        return image
+    }
 }
 
 /// One choice in the picker or in a menu: a browser, one profile of a multi-profile browser,
@@ -33,6 +58,7 @@ final class BrowserManager: ObservableObject {
     @Published private(set) var profiles: [String: [BrowserProfile]] = [:]
     private(set) var lastActiveBrowserID: String?
     private var activationObserver: NSObjectProtocol?
+    private var launchObserver: NSObjectProtocol?
 
     init() {
         refresh()
@@ -49,6 +75,18 @@ final class BrowserManager: ObservableObject {
                 self.lastActiveBrowserID = id
             }
         }
+
+        // A browser installed after launch usually gets opened once; that is the cue to look again.
+        launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard let id = app?.bundleIdentifier else { return }
+            MainActor.assumeIsolated {
+                guard let self, self.browser(withID: id) == nil, id != Bundle.main.bundleIdentifier else { return }
+                self.refresh()
+            }
+        }
     }
 
     /// Every app registered for https, except TrafficControl itself.
@@ -56,17 +94,19 @@ final class BrowserManager: ObservableObject {
         let probe = URL(string: "https://example.com")!
         var seen: Set<String> = []
         if let own = Bundle.main.bundleIdentifier { seen.insert(own) }
-        installed = NSWorkspace.shared.urlsForApplications(toOpen: probe).compactMap { url in
+        let found = NSWorkspace.shared.urlsForApplications(toOpen: probe).compactMap { url -> Browser? in
             guard let bundle = Bundle(url: url),
-                  let id = bundle.bundleIdentifier,
-                  seen.insert(id).inserted
+                let id = bundle.bundleIdentifier,
+                seen.insert(id).inserted
             else { return nil }
-            let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            let name =
+                bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
                 ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
                 ?? url.deletingPathExtension().lastPathComponent
             return Browser(id: id, name: name, appURL: url)
         }
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        if found != installed { installed = found }
         refreshProfiles()
     }
 
@@ -90,7 +130,8 @@ final class BrowserManager: ObservableObject {
     func pickerChoices(_ settings: AppSettings, for url: URL? = nil) -> [BrowserChoice] {
         var app: [BrowserChoice] = []
         if let url, let (link, deepLink) = AppLink.first(for: url), settings.appLinkMode(for: link.id) != .never,
-           let appURL = appURL(for: link.bundleID) {
+            let appURL = appURL(for: link.bundleID)
+        {
             app = [BrowserChoice(browser: Browser(id: link.bundleID, name: link.name, appURL: appURL), profile: nil, deepLink: deepLink)]
         }
         return app + orderedChoices(settings, includeHidden: false)
@@ -101,7 +142,7 @@ final class BrowserManager: ObservableObject {
         let all = ordered(settings, includeHidden: true).flatMap { browser -> [BrowserChoice] in
             let list = selectableProfiles(for: browser.id)
             guard !list.isEmpty else { return [BrowserChoice(browser: browser, profile: nil)] }
-            return list.map { BrowserChoice(browser: browser, profile: $0, avatar: $0.avatarPath.flatMap(NSImage.init(contentsOfFile:))) }
+            return list.map { BrowserChoice(browser: browser, profile: $0, avatar: ImageCache.avatar(atPath: $0.avatarPath)) }
         }
         return settings.sortedByChoiceOrder(all, target: \.target)
             .filter { includeHidden || !settings.isHidden($0.target) }
@@ -160,17 +201,10 @@ final class BrowserManager: ObservableObject {
         return NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier).filter(ids.contains)
     }
 
-    /// Browsers in the user's chosen order; unordered ones go last, alphabetically.
+    /// Installed browsers, alphabetically; `orderedChoices` applies the user's order.
     func ordered(_ settings: AppSettings, includeHidden: Bool) -> [Browser] {
-        let rank = settings.browserOrder.enumerated().reduce(into: [String: Int]()) { result, pair in
-            result[pair.element] = result[pair.element] ?? pair.offset
-        }
         let hidden = Set(settings.hiddenBrowserIDs)
-        return installed
-            .filter { includeHidden || !hidden.contains($0.id) }
-            .enumerated()
-            .sorted { (rank[$0.element.id] ?? Int.max, $0.offset) < (rank[$1.element.id] ?? Int.max, $1.offset) }
-            .map(\.element)
+        return installed.filter { includeHidden || !hidden.contains($0.id) }
     }
 
     /// Switches to a tab of `browser` already showing the link when `reuseTab` is set, otherwise opens it.

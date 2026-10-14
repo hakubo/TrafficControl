@@ -9,10 +9,57 @@
   <meta property="og:description" content="Every link, cleared for the right browser.">
   <meta property="og:image" content="https://hakubo.github.io/TrafficControl/icon.png">
   <link rel="icon" href="icon.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
   <style>
+    /* Fonts are self-hosted (SIL OFL, see fonts/OFL.txt): the page makes no font requests to third parties. */
+    @font-face {
+      font-family: 'Atkinson Hyperlegible';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url(fonts/AtkinsonHyperlegible-400.woff2) format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: 'Atkinson Hyperlegible';
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+      src: url(fonts/AtkinsonHyperlegible-700.woff2) format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: 'Big Shoulders Display';
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+      src: url(fonts/BigShouldersDisplay-700.woff2) format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: 'Big Shoulders Display';
+      font-style: normal;
+      font-weight: 800;
+      font-display: swap;
+      src: url(fonts/BigShouldersDisplay-800.woff2) format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: 'IBM Plex Mono';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url(fonts/IBMPlexMono-400.woff2) format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: 'IBM Plex Mono';
+      font-style: normal;
+      font-weight: 500;
+      font-display: swap;
+      src: url(fonts/IBMPlexMono-500.woff2) format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+
     /* Layout: a control-room board. Hero splits the pitch from a live radar scope with its strip bay;
        below, the routing sequence, the feature board, install and privacy. */
     :root {
@@ -403,7 +450,8 @@
         <span class="label">Privacy</span>
         <h2>Stays on your Mac</h2>
       </div>
-      <p>TrafficControl makes no network requests of its own. Settings and the list of domains you've opened are plain JSON files in <code>~/Library/Application Support/TrafficControl</code>. It reads your browsers' open tabs only to switch to one, and only after macOS asks for your permission.</p>
+      <p>TrafficControl makes no network requests of its own. Settings and the list of domains you've opened are plain JSON files in <code>~/Library/Application Support/TrafficControl</code>. History lives in <code>history.json</code> there and never leaves your Mac: each domain with how often you opened it and where its links went, and a link's first path segment (like a GitHub username) only when you picked a different browser for it than that domain usually gets. Switch off Remember in Settings → History, or clear the list, any time. It reads your browsers' open tabs only to switch to one, and only after macOS asks for your permission.</p>
+      <p>This page is self-contained: fonts are served from the same place as the page, and the only outside request it makes is to GitHub, to show the latest version number next to the download button.</p>
     </section>
 
     <aside class="choosy">
@@ -571,7 +619,5 @@
       requestAnimationFrame(tick);
     })();
   </script>
-  <!-- Buy Me a Coffee floating button -->
-  <script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="jakubolek" data-description="Support me on Buy me a coffee!" data-message="" data-color="#5F7FFF" data-position="Right" data-x_margin="18" data-y_margin="18"></script>
 </body>
 </html>

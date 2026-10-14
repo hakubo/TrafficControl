@@ -25,6 +25,16 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         #expect(!c.matches(link("https://zoom.us.evil.com/j/1")))
     }
 
+    @Test func repeatedRegexMatchesUseCacheAndInvalidNeverMatches() {
+        let good = Condition(field: .path, op: .regex, value: "^/PULL/\\d+$")
+        #expect(good.matches(link("https://x.com/pull/42")))
+        #expect(good.matches(link("https://x.com/pull/42")))
+        #expect(!good.matches(link("https://x.com/issues/42")))
+        let bad = Condition(field: .url, op: .regex, value: "(")
+        #expect(!bad.matches(link("https://x.com")))
+        #expect(!bad.matches(link("https://x.com")))
+    }
+
     @Test func regexAndInvalidRegex() {
         #expect(Condition(field: .path, op: .regex, value: "^/pull/\\d+$").matches(link("https://x.com/pull/42")))
         #expect(!Condition(field: .url, op: .regex, value: "(").matches(link("https://x.com")))
@@ -68,10 +78,12 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         var s = AppSettings()
         s.rules = [
             Rule(isEnabled: false, conditions: [Condition(field: .host, value: "a.com")], action: .open(browserID: chrome)),
-            Rule(matchMode: .any, conditions: [
-                Condition(field: .host, value: "b.com"),
-                Condition(field: .host, value: "a.com"),
-            ], action: .open(browserID: safari)),
+            Rule(
+                matchMode: .any,
+                conditions: [
+                    Condition(field: .host, value: "b.com"),
+                    Condition(field: .host, value: "a.com"),
+                ], action: .open(browserID: safari)),
         ]
         let d = Router.decide(link("https://a.com"), settings: s, environment: .init(installedBrowserIDs: installed))
         #expect(d == .open(BrowserTarget(browserID: safari), ruleID: s.rules[1].id))
@@ -82,6 +94,45 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         s.rules = [Rule(conditions: [Condition(field: .host, value: "a.com")], action: .open(browserID: chrome))]
         let env = RoutingEnvironment(installedBrowserIDs: installed, forcePicker: true)
         #expect(Router.decide(link("https://a.com"), settings: s, environment: env) == .ask)
+    }
+
+    @Test func activeOverrideBeatsRulesAndApps() {
+        var s = AppSettings()
+        s.rules = [Rule(conditions: [Condition(field: .host, value: "a.com")], action: .open(browserID: chrome))]
+        s.appLinkModes = ["linear": .whenRunning]
+        let now = Date(timeIntervalSince1970: 1_000)
+        let override = TemporaryOverride(target: BrowserTarget(browserID: firefox), until: now.addingTimeInterval(3600))
+        let env = RoutingEnvironment(installedBrowserIDs: installed, runningAppIDs: ["com.linear"], override: override, now: now)
+        #expect(Router.decide(link("https://a.com"), settings: s, environment: env) == .open(BrowserTarget(browserID: firefox), ruleID: nil))
+        #expect(
+            Router.decide(link("https://linear.app/team/issue/ABC-1"), settings: s, environment: env)
+                == .open(BrowserTarget(browserID: firefox), ruleID: nil))
+    }
+
+    @Test func expiredOverrideIsIgnored() {
+        var s = AppSettings()
+        s.rules = [Rule(conditions: [Condition(field: .host, value: "a.com")], action: .open(browserID: chrome))]
+        let now = Date(timeIntervalSince1970: 1_000)
+        let override = TemporaryOverride(target: BrowserTarget(browserID: firefox), until: now)
+        let env = RoutingEnvironment(installedBrowserIDs: installed, override: override, now: now)
+        #expect(Router.decide(link("https://a.com"), settings: s, environment: env) == .open(BrowserTarget(browserID: chrome), ruleID: s.rules[0].id))
+    }
+
+    @Test func pickerKeyBeatsOverride() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let override = TemporaryOverride(target: BrowserTarget(browserID: firefox), until: now.addingTimeInterval(3600))
+        let env = RoutingEnvironment(installedBrowserIDs: installed, forcePicker: true, override: override, now: now)
+        #expect(Router.decide(link("https://a.com"), settings: AppSettings(), environment: env) == .ask)
+    }
+
+    @Test func overrideForMissingBrowserFallsThrough() {
+        var s = AppSettings()
+        s.defaultBehavior = .primaryBrowser
+        s.primaryBrowser = BrowserTarget(browserID: safari)
+        let now = Date(timeIntervalSince1970: 1_000)
+        let override = TemporaryOverride(target: BrowserTarget(browserID: "com.gone"), until: now.addingTimeInterval(3600))
+        let env = RoutingEnvironment(installedBrowserIDs: installed, override: override, now: now)
+        #expect(Router.decide(link("https://a.com"), settings: s, environment: env) == .open(BrowserTarget(browserID: safari), ruleID: nil))
     }
 
     @Test func runningBrowserBehaviorIgnoresHiddenBrowsers() {
@@ -112,6 +163,23 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         var s = AppSettings()
         s.choiceOrder = [work, plainSafari]
         #expect(s.sortedByChoiceOrder([home, plainSafari, work], target: { $0 }) == [work, plainSafari, home])
+    }
+
+    @Test func legacyBrowserOrderMigratesIntoChoiceOrder() throws {
+        let json = #"{"browserOrder": ["\#(safari)", "\#(chrome)"]}"#
+        let s = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+        #expect(s.choiceOrder == [plainSafari, BrowserTarget(browserID: chrome)])
+        // Profiles of a migrated browser follow that browser's slot.
+        #expect(s.sortedByChoiceOrder([home, work, plainSafari], target: { $0 }) == [plainSafari, home, work])
+        // Written back without the legacy key.
+        let out = String(decoding: try JSONEncoder().encode(s), as: UTF8.self)
+        #expect(!out.contains("browserOrder"))
+    }
+
+    @Test func choiceOrderWinsOverLegacyBrowserOrder() throws {
+        let json = #"{"browserOrder": ["\#(safari)"], "choiceOrder": [{"browserID": "\#(chrome)"}]}"#
+        let s = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+        #expect(s.choiceOrder == [BrowserTarget(browserID: chrome)])
     }
 
     @Test func emptyChoiceOrderKeepsIncomingOrder() {
@@ -154,16 +222,17 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
 }
 
 @Suite struct ProfileTests {
-    private let localState = Data(#"""
-    {"profile": {
-      "profiles_order": ["Profile 2", "Default"],
-      "info_cache": {
-        "Default": {"name": "Personal", "user_name": "me@example.com", "gaia_picture_file_name": "Google Profile Picture.png"},
-        "Profile 2": {"name": "Work", "user_name": ""},
-        "Profile 9": {"name": "Temp", "is_ephemeral": true}
-      }
-    }}
-    """#.utf8)
+    private let localState = Data(
+        #"""
+        {"profile": {
+          "profiles_order": ["Profile 2", "Default"],
+          "info_cache": {
+            "Default": {"name": "Personal", "user_name": "me@example.com", "gaia_picture_file_name": "Google Profile Picture.png"},
+            "Profile 2": {"name": "Work", "user_name": ""},
+            "Profile 9": {"name": "Temp", "is_ephemeral": true}
+          }
+        }}
+        """#.utf8)
 
     @Test func parsesProfilesInBrowserOrderAndSkipsEphemeral() {
         let dir = URL(filePath: "/tmp/Chrome")
@@ -192,7 +261,8 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         var s = AppSettings()
         s.rules = [Rule(conditions: [Condition(field: .host, value: "corp.com")], action: .open(browserID: chrome, profileID: "Profile 2"))]
         let env = RoutingEnvironment(installedBrowserIDs: installed, installedProfiles: [chrome: ["Default", "Profile 2"]])
-        #expect(Router.decide(link("https://docs.corp.com"), settings: s, environment: env)
+        #expect(
+            Router.decide(link("https://docs.corp.com"), settings: s, environment: env)
                 == .open(BrowserTarget(browserID: chrome, profileID: "Profile 2"), ruleID: s.rules[0].id))
     }
 
@@ -202,7 +272,8 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         s.primaryBrowser = BrowserTarget(browserID: chrome, profileID: "Default")
         s.rules = [Rule(conditions: [Condition(field: .host, value: "corp.com")], action: .open(browserID: chrome, profileID: "Profile 7"))]
         let env = RoutingEnvironment(installedBrowserIDs: installed, installedProfiles: [chrome: ["Default"]])
-        #expect(Router.decide(link("https://corp.com"), settings: s, environment: env)
+        #expect(
+            Router.decide(link("https://corp.com"), settings: s, environment: env)
                 == .open(BrowserTarget(browserID: chrome, profileID: "Default"), ruleID: nil))
     }
 }
@@ -211,9 +282,11 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     private let linearURL = URL(string: "https://linear.app/buffer/project/retool-and-classic-admin-migration-a02fd684c5c4/activity#project-update-f9e936e0")!
 
     @Test func linearKeepsPathAndFragment() {
-        #expect(AppLink.linear.deepLink(linearURL)?.absoluteString
+        #expect(
+            AppLink.linear.deepLink(linearURL)?.absoluteString
                 == "linear://buffer/project/retool-and-classic-admin-migration-a02fd684c5c4/activity#project-update-f9e936e0")
-        #expect(AppLink.linear.deepLink(URL(string: "https://linear.app/buffer/issue/ENG-12?tab=x")!)?.absoluteString
+        #expect(
+            AppLink.linear.deepLink(URL(string: "https://linear.app/buffer/issue/ENG-12?tab=x")!)?.absoluteString
                 == "linear://buffer/issue/ENG-12?tab=x")
     }
 
@@ -224,12 +297,15 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     }
 
     @Test func notionZoomSpotify() {
-        #expect(AppLink.notion.deepLink(URL(string: "https://www.notion.so/buffer/Roadmap-0123456789abcdef0123456789abcdef?pvs=4")!)?.absoluteString
+        #expect(
+            AppLink.notion.deepLink(URL(string: "https://www.notion.so/buffer/Roadmap-0123456789abcdef0123456789abcdef?pvs=4")!)?.absoluteString
                 == "notion://www.notion.so/buffer/Roadmap-0123456789abcdef0123456789abcdef?pvs=4")
         #expect(AppLink.notion.deepLink(URL(string: "https://www.notion.so/product")!) == nil)
-        #expect(AppLink.zoom.deepLink(URL(string: "https://us02web.zoom.us/j/8812345678?pwd=abc")!)?.absoluteString
+        #expect(
+            AppLink.zoom.deepLink(URL(string: "https://us02web.zoom.us/j/8812345678?pwd=abc")!)?.absoluteString
                 == "zoommtg://zoom.us/join?action=join&confno=8812345678&pwd=abc")
-        #expect(AppLink.spotify.deepLink(URL(string: "https://open.spotify.com/intl-de/track/4uLU6hMCjMI75M1A2tKUQC?si=1")!)?.absoluteString
+        #expect(
+            AppLink.spotify.deepLink(URL(string: "https://open.spotify.com/intl-de/track/4uLU6hMCjMI75M1A2tKUQC?si=1")!)?.absoluteString
                 == "spotify:track:4uLU6hMCjMI75M1A2tKUQC")
     }
 
@@ -369,10 +445,10 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
 
     @Test func linkConditionsFrom014LoadAsDomainAndPath() throws {
         let json = #"""
-        {"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"Work","isEnabled":true,"matchMode":"any",
-         "conditions":[{"id":"7F9619FF-8B86-D011-B42D-00C04FC964FF","field":"address","op":"isUnder","value":"github.com/buffer"}],
-         "action":{"ask":{}}}
-        """#
+            {"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"Work","isEnabled":true,"matchMode":"any",
+             "conditions":[{"id":"7F9619FF-8B86-D011-B42D-00C04FC964FF","field":"address","op":"isUnder","value":"github.com/buffer"}],
+             "action":{"ask":{}}}
+            """#
         let rule = try JSONDecoder().decode(Rule.self, from: Data(json.utf8))
         #expect(rule.matchMode == .all)
         #expect(rule.conditions.map(\.field) == [.host, .path])
@@ -395,9 +471,11 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
             Rule.forAddress("github.com/buffer", to: work),
         ]
         let env = RoutingEnvironment(installedBrowserIDs: installed, installedProfiles: [chrome: ["Default", "Profile 2"]])
-        #expect(Router.decide(link("https://github.com/hakubo/TrafficControl"), settings: s, environment: env)
+        #expect(
+            Router.decide(link("https://github.com/hakubo/TrafficControl"), settings: s, environment: env)
                 == .open(personal, ruleID: s.rules[0].id))
-        #expect(Router.decide(link("https://github.com/buffer/web/pull/1"), settings: s, environment: env)
+        #expect(
+            Router.decide(link("https://github.com/buffer/web/pull/1"), settings: s, environment: env)
                 == .open(work, ruleID: s.rules[1].id))
         #expect(Router.decide(link("https://github.com/apple/swift"), settings: s, environment: env) == .ask)
     }
@@ -419,12 +497,46 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     @Test func historyRemembersChoicePerPath() {
         var h = LinkHistory()
         let t0 = Date(timeIntervalSince1970: 0)
-        for i in 0..<3 { h.record(URL(string: "https://github.com/buffer/r\(i)")!, destination: .browser(work), at: t0 + Double(i)) }
-        h.record(URL(string: "https://github.com/hakubo/x")!, destination: .browser(personal), at: t0 + 10)
+        for i in 0..<3 { h.record(URL(string: "https://github.com/buffer/r\(i)")!, destination: .browser(work), picked: true, at: t0 + Double(i)) }
+        h.record(URL(string: "https://github.com/hakubo/x")!, destination: .browser(personal), picked: true, at: t0 + 10)
         #expect(h.preferred(for: URL(string: "https://github.com/hakubo/y")!) == .browser(personal))
         #expect(h.preferred(for: URL(string: "https://github.com/buffer/z")!) == .browser(work))
         #expect(h.preferred(for: URL(string: "https://github.com/apple")!) == .browser(work))
-        #expect(h.records["github.com"]?.paths.map(\.segment) == ["buffer", "hakubo"])
+        // buffer went where github.com usually goes, so only hakubo needs a path entry.
+        #expect(h.records["github.com"]?.paths.map(\.segment) == ["hakubo"])
+        h.record(URL(string: "https://github.com/hakubo/z")!, destination: .browser(personal), picked: true, at: t0 + 11)
+        #expect(h.records["github.com"]?.paths.first?.visits == 2)
+    }
+
+    @Test func historyKeepsNoPathsForOneDestinationOrRuleRoutedLinks() {
+        var h = LinkHistory()
+        let t0 = Date(timeIntervalSince1970: 0)
+        h.record(URL(string: "https://twitter.com/alice")!, destination: .browser(work), picked: true, at: t0)
+        h.record(URL(string: "https://twitter.com/bob")!, destination: .browser(work), picked: true, at: t0 + 1)
+        // Routed silently by a rule, to somewhere else: still no path.
+        h.record(URL(string: "https://twitter.com/carol")!, destination: .browser(personal), at: t0 + 2)
+        #expect(h.records["twitter.com"]?.visits == 3)
+        #expect(h.records["twitter.com"]?.paths.isEmpty == true)
+    }
+
+    @Test func oldHistoryPathsAreDecodedAndRedundantOnesDropped() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let store = HistoryStore(fileURL: dir.appending(path: "h.json"))
+        let w = #"{"browser":{"_0":{"browserID":"\#(chrome)","profileID":"Profile 2"}}}"#
+        let p = #"{"browser":{"_0":{"browserID":"\#(chrome)","profileID":"Default"}}}"#
+        func path(_ s: String, _ d: String) -> String {
+            #"{"segment":"\#(s)","visits":1,"lastOpened":0,"lastDestination":\#(d),"destinations":[{"destination":\#(d),"count":1}]}"#
+        }
+        let json =
+            #"{"records":{"github.com":{"domain":"github.com","visits":3,"lastOpened":0,"lastDestination":\#(w),"#
+            + #""destinations":[{"destination":\#(w),"count":2},{"destination":\#(p),"count":1}],"#
+            + #""paths":[\#(path("buffer", w)),\#(path("apple", w)),\#(path("hakubo", p))]}}}"#
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: store.fileURL)
+        let h = store.load()
+        #expect(h.records["github.com"]?.visits == 3)
+        #expect(h.records["github.com"]?.paths.map(\.segment) == ["hakubo"])
+        #expect(h.preferred(for: URL(string: "https://github.com/hakubo/x")!) == .browser(personal))
     }
 
     @Test func oldHistoryWithoutPathsStillLoads() throws {
@@ -470,18 +582,98 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
             Rule.forAddress("github.com", to: BrowserTarget(browserID: chrome)),
         ]
         let env = RoutingEnvironment(installedBrowserIDs: installed)
-        #expect(Router.decide(clicked("https://github.com/x", holding: [.command]), settings: s, environment: env)
+        #expect(
+            Router.decide(clicked("https://github.com/x", holding: [.command]), settings: s, environment: env)
                 == .open(BrowserTarget(browserID: safari), ruleID: s.rules[0].id))
-        #expect(Router.decide(clicked("https://github.com/x", holding: []), settings: s, environment: env)
+        #expect(
+            Router.decide(clicked("https://github.com/x", holding: []), settings: s, environment: env)
                 == .open(BrowserTarget(browserID: chrome), ruleID: s.rules[1].id))
     }
 
     @Test func pickerKeyDefaultsToShiftAndLoadsFromOlderSettings() throws {
         #expect(AppSettings().pickerModifier == .shift)
         let old = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"forcePickerWithOption": false}"#.utf8))
-        #expect(old.forcePickerWithOption == false)
+        #expect(old.forcePickerWithKey == false)
         #expect(old.pickerModifier == .shift)
         let option = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"pickerModifier": "option"}"#.utf8))
         #expect(option.pickerModifier == .option)
+    }
+}
+
+@Suite struct RuleFeedbackTests {
+    @Test func regexErrorSaysWhyAPatternDoesNotCompile() {
+        #expect(Condition(field: .url, op: .regex, value: "(").regexError == "expected ')'")
+        #expect(Condition(field: .url, op: .regex, value: "*x").regexError != nil)
+        #expect(Condition(field: .path, op: .regex, value: "^/pull/\\d+$").regexError == nil)
+        #expect(Condition(field: .url, op: .regex, value: "  ").regexError == nil)
+        #expect(Condition(field: .url, op: .contains, value: "(").regexError == nil)
+    }
+
+    @Test func sampleURLComesFromDomainAndPath() {
+        #expect(Rule.forAddress("github.com/buffer", to: nil).sampleURL?.absoluteString == "https://github.com/buffer")
+        #expect(Rule.forAddress("github.com", to: nil).sampleURL?.absoluteString == "https://github.com")
+        var off = Rule.forAddress("github.com", to: nil)
+        off.isEnabled = false
+        #expect(off.sampleURL != nil)
+    }
+
+    @Test func noSampleWhenOneLinkCannotStandForTheRule() {
+        let regex = Rule(conditions: [Condition(field: .host, op: .regex, value: "git.*")])
+        let partial = Rule(conditions: [Condition(field: .host, op: .contains, value: "git")])
+        let pathOnly = Rule(conditions: [Condition(field: .path, op: .isUnder, value: "/buffer")])
+        let withApp = Rule(conditions: [
+            Condition(field: .host, op: .isDomain, value: "github.com"),
+            Condition(field: .sourceApp, op: .equals, value: "Slack"),
+        ])
+        let withKeys = Rule(conditions: [
+            Condition(field: .host, op: .isDomain, value: "github.com"),
+            Condition(field: .modifiers, op: .includeKeys, value: "⌘"),
+        ])
+        let anyOf = Rule(
+            matchMode: .any,
+            conditions: [
+                Condition(field: .host, op: .isDomain, value: "github.com"),
+                Condition(field: .path, op: .isUnder, value: "/buffer"),
+            ])
+        let empty = Rule(conditions: [Condition(field: .host, op: .isDomain, value: "")])
+        for rule in [regex, partial, pathOnly, withApp, withKeys, anyOf, empty] {
+            #expect(rule.sampleURL == nil)
+        }
+    }
+
+    @Test func broaderEarlierRuleShadowsALaterPathRule() {
+        let domain = Rule.forAddress("github.com", to: BrowserTarget(browserID: chrome))
+        let path = Rule.forAddress("github.com/buffer", to: BrowserTarget(browserID: safari))
+        let shadow = path.shadowingRule(in: [domain, path])
+        #expect(shadow?.index == 0)
+        #expect(shadow?.rule.id == domain.id)
+        // In the right order nothing is shadowed.
+        #expect(path.shadowingRule(in: [path, domain]) == nil)
+        #expect(domain.shadowingRule(in: [path, domain]) == nil)
+    }
+
+    @Test func disabledOrNarrowerEarlierRulesDoNotShadow() {
+        var domain = Rule.forAddress("github.com", to: nil)
+        domain.isEnabled = false
+        let other = Rule.forAddress("gitlab.com", to: nil)
+        let keyed = Rule(conditions: [
+            Condition(field: .host, op: .isDomain, value: "github.com"),
+            Condition(field: .modifiers, op: .includeKeys, value: "⌘"),
+        ])
+        let path = Rule.forAddress("github.com/buffer", to: nil)
+        #expect(path.shadowingRule(in: [domain, other, keyed, path]) == nil)
+        // A regex-only rule has no sample, so it is never reported as shadowed.
+        let regex = Rule(conditions: [Condition(field: .url, op: .regex, value: "github")])
+        #expect(regex.shadowingRule(in: [Rule.forAddress("github.com", to: nil), regex]) == nil)
+    }
+
+    @Test func forcePickerWithKeyKeepsLegacyJSONKey() throws {
+        var s = AppSettings()
+        s.forcePickerWithKey = false
+        let json = String(decoding: try JSONEncoder().encode(s), as: UTF8.self)
+        #expect(json.contains("\"forcePickerWithOption\":false"))
+        #expect(!json.contains("forcePickerWithKey"))
+        let back = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+        #expect(back.forcePickerWithKey == false)
     }
 }

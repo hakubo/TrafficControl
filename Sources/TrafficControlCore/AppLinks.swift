@@ -56,7 +56,7 @@ extension AppLink {
         summary: "Pages and databases on notion.so"
     ) { url in
         guard let parts = webParts(url, hosts: ["notion.so", "www.notion.so"]),
-              parts.path.range(of: "[0-9a-f]{32}$", options: .regularExpression) != nil
+            parts.path.range(of: "[0-9a-f]{32}$", options: .regularExpression) != nil
         else { return nil }
         return URL(string: "notion://www.notion.so" + parts.path + parts.suffix)
     }
@@ -66,7 +66,7 @@ extension AppLink {
         summary: "Meeting links (zoom.us/j/…)"
     ) { url in
         guard let host = url.host()?.lowercased(), host == "zoom.us" || host.hasSuffix(".zoom.us"),
-              let match = url.path().firstMatch(of: #/^\/j\/(\d+)/#)
+            let match = url.path().firstMatch(of: #/^\/j\/(\d+)/#)
         else { return nil }
         var components = URLComponents(string: "zoommtg://zoom.us/join")!
         components.queryItems = [URLQueryItem(name: "action", value: "join"), URLQueryItem(name: "confno", value: String(match.1))]
@@ -81,7 +81,7 @@ extension AppLink {
         summary: "Tracks, albums, artists, playlists and podcasts"
     ) { url in
         guard url.host()?.lowercased() == "open.spotify.com",
-              let match = url.path().firstMatch(of: #/^(?:\/intl-[a-z-]+)?\/(track|album|artist|playlist|episode|show)\/([A-Za-z0-9]+)/#)
+            let match = url.path().firstMatch(of: #/^(?:\/intl-[a-z-]+)?\/(track|album|artist|playlist|episode|show)\/([A-Za-z0-9]+)/#)
         else { return nil }
         return URL(string: "spotify:\(match.1):\(match.2)")
     }
@@ -89,8 +89,8 @@ extension AppLink {
     /// The percent-encoded path, plus "?query#fragment" as they appeared, for http(s) links on one of `hosts`.
     private static func webParts(_ url: URL, hosts: Set<String>) -> (path: String, suffix: String)? {
         guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
-              let host = url.host()?.lowercased(), hosts.contains(host),
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let host = url.host()?.lowercased(), hosts.contains(host),
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return nil }
         var suffix = ""
         if let query = components.percentEncodedQuery { suffix += "?" + query }

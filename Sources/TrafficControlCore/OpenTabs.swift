@@ -23,8 +23,8 @@ public enum TabMatching {
     /// Ignores http vs https, "www.", a trailing slash, the fragment and tracking parameters.
     public static func key(for url: URL) -> String? {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              var host = components.host?.lowercased(), !host.isEmpty
+            let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https",
+            var host = components.host?.lowercased(), !host.isEmpty
         else { return nil }
         if host.hasPrefix("www.") { host.removeFirst(4) }
 

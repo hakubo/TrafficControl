@@ -2,7 +2,7 @@ import SwiftUI
 import TrafficControlCore
 
 /// The sidebar list of domains you've opened links on, each one a click away from becoming a rule.
-struct RecentDomainsList: View {
+struct HistoryList: View {
     @Binding var selection: String?
     /// Address ("github.com" or "github.com/buffer") and the browser to send it to.
     let onCreateRule: (String, BrowserTarget?) -> Void
@@ -31,7 +31,9 @@ struct RecentDomainsList: View {
                                 .foregroundStyle(.secondary)
                                 .help("A rule already handles this domain")
                         } else {
-                            Button { onCreateRule(record.domain, record.preferredBrowser) } label: {
+                            Button {
+                                onCreateRule(record.domain, record.preferredBrowser)
+                            } label: {
                                 Image(systemName: "plus.circle")
                             }
                             .buttonStyle(.borderless)

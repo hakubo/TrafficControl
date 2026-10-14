@@ -14,6 +14,10 @@ final class PickerModel: ObservableObject {
     let choices: [BrowserChoice]
     let showURL: Bool
     @Published var selection: Int
+    /// The tile under the pointer: a lighter highlight that never changes what Return opens.
+    @Published var hovered: Int?
+    /// Full keyboard hint line vs. a "?" tooltip once the user has seen it a few times.
+    var showFullHint = true
     var onChoose: (Int, Bool) -> Void = { _, _ in }
 
     init(url: URL, sourceName: String?, choices: [BrowserChoice], showURL: Bool, selection: Int) {
@@ -107,6 +111,10 @@ final class PickerController {
         let model = PickerModel(
             url: request.url, sourceName: request.sourceApp?.localizedName,
             choices: list, showURL: s.showURLInPicker, selection: initial)
+        // The full hint line is only shown for the first few opens, then it moves behind a "?" tooltip.
+        let hintCount = UserDefaults.standard.integer(forKey: "pickerHintShownCount")
+        model.showFullHint = hintCount < 10
+        UserDefaults.standard.set(hintCount + 1, forKey: "pickerHintShownCount")
         model.onChoose = { [weak self] index, background in self?.choose(index, inBackground: background) }
 
         let panel = PickerPanel()
@@ -124,9 +132,14 @@ final class PickerController {
         panel.invalidateShadow()
 
         // Clicking anywhere outside the picker dismisses it.
-        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.dismiss() }
-        }) { monitors.append(m) }
+        if let m = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown],
+            handler: { [weak self] _ in
+                MainActor.assumeIsolated { self?.dismiss() }
+            })
+        {
+            monitors.append(m)
+        }
     }
 
     /// Centered on the mouse pointer, kept inside the visible area of its screen.
@@ -145,19 +158,20 @@ final class PickerController {
         let count = model.choices.count
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let background = mods.contains(.shift)
-        let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        // Shift is stripped too, so ⇧1 reads as "1" rather than "!".
+        let chars = event.characters(byApplyingModifiers: [])?.lowercased() ?? ""
 
         switch event.keyCode {
-        case 53: // escape
+        case 53:  // escape
             dismiss()
             return true
-        case 36, 76: // return, keypad enter
+        case 36, 76:  // return, keypad enter
             choose(model.selection, inBackground: background)
             return true
-        case 123: // left
+        case 123:  // left
             model.selection = (model.selection - 1 + count) % count
             return true
-        case 124, 48: // right, tab
+        case 124, 48:  // right, tab
             model.selection = (model.selection + (mods.contains(.shift) && event.keyCode == 48 ? count - 1 : 1)) % count
             return true
         default:
@@ -200,7 +214,7 @@ final class PickerController {
     private func choose(_ index: Int, inBackground: Bool) {
         guard let model, let current, model.choices.indices.contains(index) else { return }
         let choice = model.choices[index]
-        if settings.settings.rememberDomains { history.record(current.url, destination: choice.destination) }
+        if settings.settings.rememberDomains { history.record(current.url, destination: choice.destination, picked: true) }
         if let deepLink = choice.deepLink {
             browsers.openInApp(deepLink, bundleID: choice.browser.id)
             dismiss()
@@ -229,22 +243,56 @@ final class PickerController {
 struct PickerView: View {
     @ObservedObject var model: PickerModel
 
+    /// "Chrome, Buffer profile, 2": parts that don't exist are left out.
+    private static func accessibilityLabel(for choice: BrowserChoice, shortcut: Int?) -> String {
+        var parts: [String]
+        if choice.deepLink != nil {
+            parts = [choice.title, "desktop app"]
+        } else if let profile = choice.profile {
+            parts = [choice.browser.name, "\(profile.name) profile"]
+        } else {
+            parts = [choice.title]
+        }
+        if let shortcut { parts.append(String(shortcut)) }
+        return parts.joined(separator: ", ")
+    }
+
+    private static let hint = "⏎ open  ·  ⇧ opens in background  ·  ⌘C copy link  ·  esc cancel"
+
+    /// The host in primary colour, the rest of the link (path, query) secondary.
+    private static func styledLink(_ url: URL) -> Text {
+        let full = url.absoluteString
+        guard let host = url.host, let range = full.range(of: host) else { return Text(full) }
+        return Text(full[..<range.lowerBound]).foregroundColor(.secondary)
+            + Text(host).foregroundColor(.primary)
+            + Text(full[range.upperBound...]).foregroundColor(.secondary)
+    }
+
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 4) {
                 ForEach(Array(model.choices.enumerated()), id: \.element.id) { index, choice in
-                    ChoiceTile(choice: choice, shortcut: index < 9 ? index + 1 : nil, isSelected: index == model.selection)
-                        .contentShape(Rectangle())
-                        .onHover { if $0 { model.selection = index } }
-                        .onTapGesture { model.onChoose(index, NSEvent.modifierFlags.contains(.shift)) }
+                    Button {
+                        model.onChoose(index, NSEvent.modifierFlags.contains(.shift))
+                    } label: {
+                        ChoiceTile(choice: choice, shortcut: index < 9 ? index + 1 : nil, isSelected: index == model.selection, isHovered: index == model.hovered)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    // Keys are handled by the panel, so buttons must not take focus.
+                    .focusable(false)
+                    .onHover { if $0 { model.hovered = index } else if model.hovered == index { model.hovered = nil } }
+                    .accessibilityLabel(Self.accessibilityLabel(for: choice, shortcut: index < 9 ? index + 1 : nil))
+                    .accessibilityAddTraits(index == model.selection ? .isSelected : [])
                 }
             }
             if model.showURL {
                 VStack(spacing: 2) {
-                    Text(model.url.absoluteString)
+                    Self.styledLink(model.url)
                         .font(.system(size: 11))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .help(model.url.absoluteString)
                     if let source = model.sourceName {
                         Text("from \(source)").font(.system(size: 10)).foregroundStyle(.tertiary)
                     }
@@ -252,9 +300,16 @@ struct PickerView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: max(240, CGFloat(model.choices.count) * 84))
             }
-            Text("⏎ open  ·  ⇧ in background  ·  ⌘C copy link  ·  esc cancel")
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+            if model.showFullHint {
+                Text(Self.hint)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            } else {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .help(Self.hint)
+            }
         }
         .padding(14)
         .background(VisualEffectBackground())
@@ -267,6 +322,7 @@ private struct ChoiceTile: View {
     let choice: BrowserChoice
     let shortcut: Int?
     let isSelected: Bool
+    let isHovered: Bool
 
     var body: some View {
         VStack(spacing: 4) {
@@ -296,7 +352,7 @@ private struct ChoiceTile: View {
         .padding(6)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.28) : .clear)
+                .fill(isSelected ? Color.accentColor.opacity(0.28) : isHovered ? Color.accentColor.opacity(0.12) : .clear)
         )
     }
 }

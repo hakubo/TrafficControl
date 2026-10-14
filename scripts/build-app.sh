@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds a universal (Apple Silicon + Intel) TrafficControl.app into ./build using SwiftPM.
 #   VERSION=1.2.3   sets CFBundleShortVersionString (default: from Info.plist)
-#   BUILD_NUMBER=42 sets CFBundleVersion (default: git commit count)
+#   BUILD_NUMBER=42 sets CFBundleVersion (default: MAJOR*10000 + MINOR*100 + PATCH of the version,
+#                   so 0.1.6 -> 106; monotonic by construction, independent of git history)
 #   ARCHS="arm64"   builds only some architectures (default: "arm64 x86_64")
 set -euo pipefail
 
@@ -28,7 +29,21 @@ PLIST="$APP/Contents/Info.plist"
 if [ -n "${VERSION:-}" ]; then
     plutil -replace CFBundleShortVersionString -string "${VERSION#v}" "$PLIST"
 fi
-plutil -replace CFBundleVersion -string "${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}" "$PLIST"
+# CFBundleVersion is what Sparkle compares (sparkle:version), so it must only ever grow. Derive it from the
+# marketing version (the release tag, or Info.plist for local builds) rather than the commit count, which a
+# rebase or squash can lower. Pre-release suffixes (0.2.0-beta1) are ignored. MINOR and PATCH must stay below 100.
+if [ -z "${BUILD_NUMBER:-}" ]; then
+    SHORT_VERSION="$(plutil -extract CFBundleShortVersionString raw "$PLIST")"
+    IFS=. read -r MAJOR MINOR PATCH <<< "${SHORT_VERSION%%-*}"
+    for part in "$MAJOR" "$MINOR" "${PATCH:-0}"; do
+        case "$part" in ''|*[!0-9]*) echo "error: can't derive a build number from version '$SHORT_VERSION'" >&2; exit 1 ;; esac
+    done
+    if [ "$MINOR" -ge 100 ] || [ "${PATCH:-0}" -ge 100 ]; then
+        echo "error: MINOR and PATCH must be below 100 to derive a build number ('$SHORT_VERSION')" >&2; exit 1
+    fi
+    BUILD_NUMBER=$((10#$MAJOR * 10000 + 10#$MINOR * 100 + 10#${PATCH:-0}))
+fi
+plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$PLIST"
 
 # Ad-hoc signature for local use; scripts/package.sh re-signs with a Developer ID when one is configured.
 codesign --force --deep --sign - "$APP"

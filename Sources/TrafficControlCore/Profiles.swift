@@ -61,8 +61,8 @@ public enum ChromiumProfiles {
     /// Profiles in the order the browser shows them; `Default` first when no order is recorded.
     public static func parseLocalState(_ data: Data, userDataDirectory: URL? = nil) -> [BrowserProfile] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let profile = root["profile"] as? [String: Any],
-              let cache = profile["info_cache"] as? [String: [String: Any]]
+            let profile = root["profile"] as? [String: Any],
+            let cache = profile["info_cache"] as? [String: [String: Any]]
         else { return [] }
 
         let order = (profile["profiles_order"] as? [String]) ?? []

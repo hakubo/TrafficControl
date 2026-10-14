@@ -47,6 +47,8 @@ final class LinkRouter {
     private let picker: PickerController
     private let history: HistoryModel
     private let modifiers = ModifierTracker()
+    /// "Send All Links To" from the menu bar. In memory only: relaunching TrafficControl clears it.
+    var override: TemporaryOverride?
 
     init(settings: SettingsModel, browsers: BrowserManager, picker: PickerController, history: HistoryModel) {
         self.settings = settings
@@ -56,11 +58,11 @@ final class LinkRouter {
     }
 
     func route(_ urls: [URL], senderPID: pid_t?) {
-        if browsers.installed.isEmpty { browsers.refresh() } else { browsers.refreshProfiles() }
+        browsers.refresh()
         let source = sourceApplication(pid: senderPID)
         let current = settings.settings
         let held = modifiers.held()
-        let forcePicker = current.forcePickerWithOption && held.contains(current.pickerModifier)
+        let forcePicker = current.forcePickerWithKey && held.contains(current.pickerModifier)
 
         for url in urls {
             let context = LinkContext(
@@ -73,16 +75,20 @@ final class LinkRouter {
                 installedAppIDs: browsers.installedAppLinkIDs,
                 runningAppIDs: browsers.runningAppLinkIDs,
                 lastActiveBrowserID: browsers.lastActiveBrowserID,
-                forcePicker: forcePicker)
+                forcePicker: forcePicker,
+                override: override)
 
             let decision = Router.decide(context, settings: current, environment: environment)
+            let overridden = override.map { $0.isActive(at: environment.now) && decision == .open($0.target, ruleID: nil) } ?? false
 
             // Already open somewhere? Go there instead of opening a duplicate. Desktop apps still win,
             // the picker key skips this so the picker always appears, and so does a rule that asks
-            // for held keys: holding them says where you want the link.
-            if current.tabReuse == .anyBrowser, !forcePicker, !decision.isApp,
-               !Self.ruleUsesKeys(decision, in: current.rules),
-               let tab = OpenTabFinder.find(url, in: tabSearchOrder(decision)), OpenTabFinder.focus(tab) {
+            // for held keys: holding them says where you want the link. An override keeps links in
+            // its browser (say, the one being screen-shared), so it skips this too.
+            if current.tabReuse == .anyBrowser, !forcePicker, !decision.isApp, !overridden,
+                !Self.ruleUsesKeys(decision, in: current.rules),
+                let tab = OpenTabFinder.find(url, in: tabSearchOrder(decision)), OpenTabFinder.focus(tab)
+            {
                 continue
             }
 

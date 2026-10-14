@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import TrafficControlCore
 
 @main
 enum TrafficControlMain {
@@ -28,6 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var settingsWindow: NSWindow?
     private var cancellables: Set<AnyCancellable> = []
     private var receivedLinkAtLaunch = false
+    private var overrideTimer: Timer?
+
+    func applicationWillTerminate(_ notification: Notification) {
+        history.flush()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
@@ -72,35 +78,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let menu = NSMenu()
         menu.delegate = self
+        // Items set isEnabled themselves (the clipboard item); auto-enabling would override it.
+        menu.autoenablesItems = false
         item.menu = menu
         statusItem = item
         updateStatusIcon(isDefault: defaultStatus.isDefault)
     }
 
-    /// The menu bar icon gets an orange dot while links aren't reaching TrafficControl.
+    /// The menu bar icon gets an orange dot while links aren't reaching TrafficControl,
+    /// and the accent color while "Send All Links To" is on.
     private func updateStatusIcon(isDefault: Bool) {
-        guard let button = statusItem?.button,
-              let symbol = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "TrafficControl")
-        else { return }
-        button.toolTip = isDefault ? "TrafficControl" : "TrafficControl isn't your default browser"
-        guard !isDefault else {
-            button.image = symbol
-            return
-        }
-        let base = symbol.withSymbolConfiguration(.init(pointSize: 14, weight: .regular)) ?? symbol
-        let size = NSSize(width: base.size.width + 3, height: base.size.height + 2)
-        // Drawn at display time, so the symbol takes the menu bar's current text color.
-        let image = NSImage(size: size, flipped: false) { rect in
-            let tinted = base.withSymbolConfiguration(.init(paletteColors: [.labelColor])) ?? base
-            tinted.draw(in: NSRect(x: 0, y: 1, width: base.size.width, height: base.size.height))
-            let dot = NSRect(x: rect.maxX - 7, y: rect.maxY - 7, width: 7, height: 7)
-            NSColor.systemOrange.setFill()
-            NSBezierPath(ovalIn: dot).fill()
-            return true
-        }
-        image.isTemplate = false
-        image.accessibilityDescription = "TrafficControl isn't your default browser"
-        button.image = image
+        guard let button = statusItem?.button else { return }
+        let override = activeOverride
+        button.toolTip = [
+            isDefault ? "TrafficControl" : "TrafficControl isn't your default browser",
+            override.map { "Sending all links to \(browsers.title(for: $0.target)) until \(Self.time($0.until))" },
+        ].compactMap { $0 }.joined(separator: "\n")
+        // Tints only the template tower; the orange-dot image is drawn in its own colors.
+        button.contentTintColor = override == nil ? nil : .controlAccentColor
+        button.image = isDefault ? StatusIcon.template() : StatusIcon.withWarningDot()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -119,7 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         let clipboard = menu.addItem(withTitle: "Open Link from Clipboard", action: #selector(openClipboard), keyEquivalent: "")
         clipboard.target = self
-        clipboard.isEnabled = clipboardURL != nil
+        enableWhenClipboardHoldsURL(clipboard)
+        addOverrideItems(to: menu)
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
         if updater.isAvailable {
             menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
@@ -129,10 +126,89 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(withTitle: "Quit TrafficControl", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
+    // MARK: - Send All Links To
+
+    private var activeOverride: TemporaryOverride? {
+        router.override.flatMap { $0.isActive(at: Date()) ? $0 : nil }
+    }
+
+    private static func time(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
+    /// A submenu of browsers (and profiles) that takes over routing for an hour, e.g. during a screen share.
+    private func addOverrideItems(to menu: NSMenu) {
+        let choices = browsers.orderedChoices(settings.settings, includeHidden: false)
+        guard !choices.isEmpty else { return }
+        let override = activeOverride
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        submenu.addItem(.sectionHeader(title: "For the Next Hour"))
+        for choice in choices {
+            let item = submenu.addItem(withTitle: choice.menuTitle, action: #selector(startOverride(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = choice.target
+            item.state = override?.target == choice.target ? .on : .off
+            let icon = (choice.avatar ?? choice.browser.icon).copy() as? NSImage
+            icon?.size = NSSize(width: 16, height: 16)
+            item.image = icon
+        }
+
+        let parent = menu.addItem(withTitle: "Send All Links To", action: nil, keyEquivalent: "")
+        parent.submenu = submenu
+        guard let override else { return }
+        let name = browsers.title(for: override.target)
+        parent.title = "Sending All Links to \(name)"
+        if #available(macOS 14.4, *) {
+            parent.subtitle = "Until \(Self.time(override.until))"
+        } else {
+            parent.title += " Until \(Self.time(override.until))"
+        }
+        menu.addItem(withTitle: "Stop Sending All Links to \(name)", action: #selector(stopOverride), keyEquivalent: "").target = self
+    }
+
+    @objc private func startOverride(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? BrowserTarget else { return }
+        setOverride(TemporaryOverride(target: target, until: Date().addingTimeInterval(60 * 60)))
+    }
+
+    @objc private func stopOverride() {
+        setOverride(nil)
+    }
+
+    /// The router checks the expiry itself; the timer only clears the menu bar icon and tooltip on time.
+    private func setOverride(_ override: TemporaryOverride?) {
+        router.override = override
+        overrideTimer?.invalidate()
+        overrideTimer = nil
+        if let override {
+            let timer = Timer(fire: override.until, interval: 0, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setOverride(nil) }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            overrideTimer = timer
+        }
+        updateStatusIcon(isDefault: defaultStatus.isDefault)
+    }
+
+    /// Enables the item if the pasteboard probably holds a web URL, without reading its contents
+    /// (reading on every menu open can trigger macOS's paste-privacy alert).
+    private func enableWhenClipboardHoldsURL(_ item: NSMenuItem) {
+        guard #available(macOS 15.4, *) else { return }
+        item.isEnabled = false
+        nonisolated(unsafe) let item = item
+        // The Swift overlay for this API isn't in this SDK, so call the refined ObjC entry point.
+        NSPasteboard.general.__detectPatterns(forPatterns: [.__probableWebURL]) { patterns, _ in
+            let found = patterns?.contains(.__probableWebURL) ?? false
+            DispatchQueue.main.async { item.isEnabled = found }
+        }
+    }
+
+    /// Reads the pasteboard; call only when the user chooses the clipboard item.
     private var clipboardURL: URL? {
         guard let text = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              let url = URL(string: text), let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme)
+            let url = URL(string: text), let scheme = url.scheme?.lowercased(),
+            ["http", "https"].contains(scheme)
         else { return nil }
         return url
     }
@@ -155,8 +231,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     @objc func showSettings() {
+        browsers.refresh()
         if settingsWindow == nil {
-            browsers.refresh()
             let root = SettingsView()
                 .environmentObject(settings)
                 .environmentObject(browsers)
@@ -164,24 +240,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 .environmentObject(updater)
                 .environmentObject(defaultStatus)
             // A full-size content view plus an (empty) unified toolbar lets the sidebar run under the
-            // title bar, like System Settings; SettingsView sets the title to the selected pane.
+            // title bar, like System Settings; SettingsView's .navigationTitle names the selected pane.
             let window = NSWindow(
                 contentRect: .zero,
                 styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                 backing: .buffered, defer: false)
-            window.contentView = NSHostingView(rootView: root)
+            window.title = "TrafficControl"  // Replaced by the pane's .navigationTitle once SwiftUI loads.
+            let host = NSHostingController(rootView: root)
+            // Don't let SwiftUI resize the window to its ideal size; keep the default/autosaved frame.
+            // SettingsView's minimum frame still sets the window's minimum size.
+            host.sizingOptions = [.minSize]
+            window.contentViewController = host
             let toolbar = NSToolbar()
             // The toolbar has no items, so its right-click "Icon and Text / Icon Only / Text Only" menu
             // would do nothing. (macOS 14 has no way to turn it off.)
             if #available(macOS 15.0, *) { toolbar.allowsDisplayModeCustomization = false }
             window.toolbar = toolbar
             window.toolbarStyle = .unified
-            window.title = "TrafficControl"
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 907, height: 821))
+            window.setContentSize(NSSize(width: 907, height: 680))
             window.collectionBehavior.insert(.moveToActiveSpace)
             window.delegate = self
+            // Centre at the default size; the autosave name then restores a saved frame if there is one.
             window.center()
+            window.setFrameAutosaveName("Settings")
             settingsWindow = window
         }
         guard let window = settingsWindow else { return }

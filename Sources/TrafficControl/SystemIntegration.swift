@@ -26,28 +26,55 @@ final class SettingsModel: ObservableObject {
 final class HistoryModel: ObservableObject {
     @Published private(set) var history: LinkHistory
     private let store: HistoryStore
+    private let writer = DispatchQueue(label: "TrafficControl.history-writer")
+    private var pendingSave: DispatchWorkItem?
 
     init(store: HistoryStore = HistoryStore()) {
         self.store = store
         self.history = store.load()
     }
 
-    func record(_ url: URL, destination: LinkDestination) {
-        history.record(url, destination: destination)
-        save()
+    func record(_ url: URL, destination: LinkDestination, picked: Bool = false) {
+        history.record(url, destination: destination, picked: picked)
+        scheduleSave()
     }
 
     func remove(_ domain: String) {
         history.remove(domain)
-        save()
+        saveNow()
     }
 
     func clear() {
         history.clear()
-        save()
+        saveNow()
     }
 
-    private func save() {
+    /// Writes any pending change and waits for it. Call when the app quits.
+    func flush() {
+        guard pendingSave != nil else { return }
+        pendingSave?.cancel()
+        pendingSave = nil
+        let snapshot = history, store = store
+        writer.sync { Self.write(snapshot, to: store) }
+    }
+
+    /// Clicks arrive in bursts; coalesce them into one write a second after the last.
+    private func scheduleSave() {
+        pendingSave?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.saveNow() }
+        pendingSave = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: item)
+    }
+
+    /// Encodes and writes off the main thread. The queue is serial so an older snapshot can't land after a newer one.
+    private func saveNow() {
+        pendingSave?.cancel()
+        pendingSave = nil
+        let snapshot = history, store = store
+        writer.async { Self.write(snapshot, to: store) }
+    }
+
+    private nonisolated static func write(_ history: LinkHistory, to store: HistoryStore) {
         do { try store.save(history) } catch { NSLog("TrafficControl: failed to save history: \(error)") }
     }
 }
@@ -60,7 +87,8 @@ final class UpdaterModel: ObservableObject {
 
     init() {
         let bundled = Bundle.main.bundleURL.pathExtension == "app"
-        controller = bundled
+        controller =
+            bundled
             ? SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
             : nil
     }
@@ -95,12 +123,13 @@ enum Links {
     static let website = URL(string: "https://hakubo.github.io/TrafficControl/")!
     static let repository = URL(string: "https://github.com/hakubo/TrafficControl")!
     static let buyMeACoffee = URL(string: "https://buymeacoffee.com/jakubolek")!
+    static let automationSettings = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!
 }
 
 enum DefaultBrowser {
     static var isDefault: Bool {
         guard let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),
-              let id = Bundle(url: url)?.bundleIdentifier
+            let id = Bundle(url: url)?.bundleIdentifier
         else { return false }
         return id == Bundle.main.bundleIdentifier
     }
@@ -126,9 +155,12 @@ final class DefaultBrowserStatus: ObservableObject {
     private var activation: NSObjectProtocol?
 
     init() {
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        // Slow background poll (the menu and activation hooks refresh promptly); the tolerance
+        // lets the OS coalesce wakeups.
+        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
+        timer?.tolerance = 10
         activation = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -147,7 +179,15 @@ final class DefaultBrowserStatus: ObservableObject {
 }
 
 enum LoginItem {
-    static var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
+    /// On when registered, including while macOS is still waiting for the user's approval.
+    static var isEnabled: Bool {
+        let status = SMAppService.mainApp.status
+        return status == .enabled || status == .requiresApproval
+    }
+
+    static var needsApproval: Bool { SMAppService.mainApp.status == .requiresApproval }
+
+    static func openLoginItemsSettings() { SMAppService.openSystemSettingsLoginItems() }
 
     static func setEnabled(_ enabled: Bool) {
         do {
