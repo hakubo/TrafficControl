@@ -20,7 +20,7 @@ jobs:
     env:
       SIGNED: ${{ secrets.DEVELOPER_ID_P12 != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -55,6 +55,13 @@ jobs:
       - name: Write release notes
         run: |
           {
+            # This version's section of CHANGELOG.md, if there is one.
+            changes="$(awk -v v="${GITHUB_REF_NAME#v}" '/^## /{p = ($2 == v); next} p' CHANGELOG.md)"
+            if [ -n "$changes" ]; then
+              echo "### What's new"
+              echo "$changes"
+              echo
+            fi
             echo "### Install"
             echo "1. Download **TrafficControl.dmg**, open it and drag TrafficControl into Applications."
             if [ "$SIGNED" != "true" ]; then

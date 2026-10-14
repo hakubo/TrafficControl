@@ -78,7 +78,9 @@ make icon      # redraws Resources/AppIcon.icns and docs/icon.png from scripts/m
 
 ## Releasing
 
-Push a version tag and GitHub Actions builds, packages and publishes the release:
+Add a `## <version>` section to `CHANGELOG.md` (it becomes the release notes), bump
+`CFBundleShortVersionString` in `Resources/Info.plist`, then push a version tag. GitHub Actions builds,
+packages and publishes the release:
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0
