@@ -24,7 +24,7 @@ Or by hand:
    `xattr -dr com.apple.quarantine /Applications/TrafficControl.app`.
 3. In TrafficControl's Settings, click **Make Default** and confirm the macOS prompt.
 
-TrafficControl updates itself: it checks daily and installs new versions (from 0.1.1 on).
+TrafficControl updates itself: it checks daily and installs new versions (from 0.1.2 on).
 
 ## Features
 

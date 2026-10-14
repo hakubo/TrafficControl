@@ -1,10 +1,14 @@
 # Changelog
 
-## 0.1.1
+## 0.1.2
 
 - Automatic updates: TrafficControl checks for new versions daily and installs them for you.
   Use Check for Updates… in the menu bar, or turn it off in Settings → General.
+  This is the last version you need to install by hand.
 - Install with Homebrew: `brew install --cask hakubo/tap/trafficcontrol`.
+
+## 0.1.1
+
 - New app icon: a control tower with an amber-lit cab over a radar sweep.
 - Settings → General has an About section with the version number, links to the website and GitHub,
   and a Buy Me a Coffee button. The menu bar menu has a Buy Me a Coffee item too.
