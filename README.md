@@ -115,7 +115,7 @@ macOS prompt.
 ## Looking for more?
 
 TrafficControl is a simple version of [Choosy](https://choosy.app). If you want something more robust,
-with more options, Choosy is the better choice.
+with more options, Choosy might be a better choice.
 
 ## Support
 
