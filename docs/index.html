@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TrafficControl</title>
+  <meta name="description" content="A free macOS app that sends every link you click to the right browser, profile or app.">
+  <meta property="og:title" content="TrafficControl">
+  <meta property="og:description" content="Send every link you click to the right browser, profile or app.">
+  <meta property="og:image" content="icon.png">
+  <link rel="icon" href="icon.png">
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --surface: #ffffff;
+      --text: #141a29;
+      --muted: #5b6478;
+      --border: #e2e5ee;
+      --accent: #1f9d55;
+      --accent-text: #ffffff;
+      --hero-a: #24365e;
+      --hero-b: #101828;
+      --code-bg: #eef0f6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0d121c;
+        --surface: #151c2b;
+        --text: #e8ecf5;
+        --muted: #9aa4ba;
+        --border: #263047;
+        --accent: #32d74b;
+        --accent-text: #08210f;
+        --code-bg: #1d2537;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #0d121c;
+      --surface: #151c2b;
+      --text: #e8ecf5;
+      --muted: #9aa4ba;
+      --border: #263047;
+      --accent: #32d74b;
+      --accent-text: #08210f;
+      --code-bg: #1d2537;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+
+    header.hero {
+      background: linear-gradient(180deg, var(--hero-a), var(--hero-b));
+      color: #fff;
+      text-align: center;
+      padding: 72px 0 64px;
+    }
+    .hero img { width: 128px; height: 128px; }
+    .hero h1 { font-size: clamp(36px, 7vw, 56px); letter-spacing: -0.02em; margin: 12px 0 8px; }
+    .hero p.lede { font-size: clamp(17px, 2.6vw, 21px); color: #c9d3ea; max-width: 620px; margin: 0 auto 32px; }
+    .download {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: var(--accent); color: var(--accent-text);
+      font-weight: 600; font-size: 18px; text-decoration: none;
+      padding: 14px 28px; border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(50, 215, 75, 0.25);
+    }
+    .download:hover { filter: brightness(1.08); }
+    .download svg { width: 20px; height: 20px; }
+    .meta { margin-top: 14px; font-size: 14px; color: #9fb0d4; }
+    .meta a { color: #c9d3ea; }
+
+    section { padding: 64px 0 8px; }
+    h2 { font-size: 28px; letter-spacing: -0.01em; margin: 0 0 24px; }
+
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px;
+    }
+    .card h3 { margin: 0 0 6px; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+    .card p { margin: 0; color: var(--muted); font-size: 15px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+    ol.steps { padding-left: 22px; margin: 0; }
+    ol.steps li { margin-bottom: 12px; }
+    .note {
+      background: var(--surface); border: 1px solid var(--border); border-left: 4px solid #ffb340;
+      border-radius: 10px; padding: 14px 16px; margin-top: 20px; color: var(--muted); font-size: 15px;
+    }
+    .note strong { color: var(--text); }
+    code {
+      font: 13.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+      background: var(--code-bg); padding: 2px 6px; border-radius: 6px; word-break: break-all;
+    }
+    kbd {
+      font: 13px ui-monospace, "SF Mono", Menlo, monospace;
+      border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px;
+      background: var(--surface);
+    }
+
+    .choosy {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px;
+    }
+    .choosy h2 { font-size: 22px; margin-bottom: 8px; }
+    .choosy p { margin: 0; color: var(--muted); }
+    .choosy a { color: var(--text); font-weight: 600; }
+
+    footer { padding: 56px 0 40px; color: var(--muted); font-size: 14px; text-align: center; }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <img src="icon.png" alt="" width="128" height="128">
+      <h1>TrafficControl</h1>
+      <p class="lede">Every link you click goes to the right browser, Chrome profile or app. Set rules once, or pick on the spot.</p>
+      <a class="download" id="download" href="https://github.com/hakubo/TrafficControl/releases/latest/download/TrafficControl.dmg">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10M5.5 8.5 10 13l4.5-4.5M4 17h12"/></svg>
+        Download for Mac
+      </a>
+      <div class="meta">
+        <span id="version">Free and open source</span> · macOS 14+ · Apple Silicon &amp; Intel ·
+        <a href="https://github.com/hakubo/TrafficControl">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section>
+      <h2>What it does</h2>
+      <div class="features">
+        <div class="card">
+          <h3><span class="dot" style="background:#32d74b"></span>A picker at your cursor</h3>
+          <p>Click a link and choose where it opens. Press <kbd>1</kbd>–<kbd>9</kbd> or a browser's first letter, <kbd>⇧</kbd> to open in the background, <kbd>⌘C</kbd> to copy.</p>
+        </div>
+        <div class="card">
+          <h3><span class="dot" style="background:#0a84ff"></span>Chrome profiles</h3>
+          <p>Each profile gets its own entry, with your account picture. Work links go to the work profile. Also works with Brave, Edge, Vivaldi and Chromium.</p>
+        </div>
+        <div class="card">
+          <h3><span class="dot" style="background:#ffb340"></span>Rules</h3>
+          <p>Send links by domain, URL, path or the app you clicked in, with wildcards or regex. Rules can skip the picker or always show it.</p>
+        </div>
+        <div class="card">
+          <h3><span class="dot" style="background:#bf5af2"></span>Desktop apps</h3>
+          <p>Linear, Notion, Zoom and Spotify links open in their apps when they're running, not in another browser tab.</p>
+        </div>
+        <div class="card">
+          <h3><span class="dot" style="background:#ff453a"></span>No duplicate tabs</h3>
+          <p>If the page is already open in Safari or a Chrome-based browser, TrafficControl switches to that tab.</p>
+        </div>
+        <div class="card">
+          <h3><span class="dot" style="background:#64d2ff"></span>Learns your habits</h3>
+          <p>It remembers where each domain's links went, highlights your usual choice, and turns a domain into a rule with one click.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="choosy">
+        <h2>Want something more robust? Use Choosy.</h2>
+        <p>
+          TrafficControl is a small, simple take on an idea that <a href="https://choosy.app">Choosy</a> has done well
+          for years. If you want a more complete and polished tool, with more options and an
+          actively supported app, <a href="https://choosy.app">Choosy</a> is the better choice.
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Install</h2>
+      <ol class="steps">
+        <li>Download <strong>TrafficControl.dmg</strong>, open it and drag TrafficControl into <strong>Applications</strong>.</li>
+        <li>Open TrafficControl. It lives in the menu bar, not the Dock.</li>
+        <li>In its Settings, click <strong>Make Default</strong> and confirm the macOS prompt.</li>
+      </ol>
+      <div class="note" id="gatekeeper">
+        <strong>"Apple could not verify TrafficControl…"</strong> This build isn't notarized by Apple yet, so macOS
+        blocks the first launch. After trying to open it once, go to <strong>System Settings → Privacy &amp; Security</strong>
+        and click <strong>Open Anyway</strong>. Or run this in Terminal:<br>
+        <code>xattr -dr com.apple.quarantine /Applications/TrafficControl.app</code>
+      </div>
+    </section>
+
+    <section>
+      <h2>Privacy</h2>
+      <p style="color:var(--muted);margin:0">
+        Everything stays on your Mac. Settings and the list of domains you've opened are plain JSON files in
+        <code>~/Library/Application Support/TrafficControl</code>. TrafficControl makes no network requests of its own.
+        It reads your browsers' open tabs only to switch to one, and only after macOS asks for your permission.
+      </p>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    TrafficControl is free and open source, and a simpler alternative to <a href="https://choosy.app">Choosy</a>.
+  </footer>
+
+  <script>
+    // Show the latest version number; the download link already points at the latest release.
+    fetch("https://api.github.com/repos/hakubo/TrafficControl/releases/latest")
+      .then(r => (r.ok ? r.json() : null))
+      .then(release => {
+        if (!release || !release.tag_name) return;
+        const date = new Date(release.published_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+        const version = document.getElementById("version");
+        version.textContent = "";
+        const link = document.createElement("a");
+        link.href = release.html_url;
+        link.textContent = "Version " + release.tag_name.replace(/^v/, "");
+        version.append(link, " · " + date);
+      })
+      .catch(() => {});
+  </script>
+</body>
+</html>

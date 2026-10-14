@@ -1,0 +1,80 @@
+name: Release
+
+# Push a tag like v0.2.0 to build, package and publish a GitHub release.
+#
+# Optional secrets for a signed and notarized build (without them the app is ad-hoc signed):
+#   DEVELOPER_ID_P12           base64 of a "Developer ID Application" certificate exported as .p12
+#   DEVELOPER_ID_P12_PASSWORD  its export password
+#   SIGN_IDENTITY              e.g. "Developer ID Application: Your Name (TEAMID)"
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarization (app-specific password)
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      SIGNED: ${{ secrets.DEVELOPER_ID_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test
+        run: swift test
+
+      - name: Import signing certificate
+        if: env.SIGNED == 'true'
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          echo "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security import "$RUNNER_TEMP/cert.p12" -k build.keychain -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          security list-keychains -d user -s build.keychain login.keychain
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Package
+        env:
+          VERSION: ${{ github.ref_name }}
+          SIGN_IDENTITY: ${{ secrets.SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: bash scripts/package.sh
+
+      - name: Write release notes
+        run: |
+          {
+            echo "### Install"
+            echo "1. Download **TrafficControl.dmg**, open it and drag TrafficControl into Applications."
+            if [ "$SIGNED" != "true" ]; then
+              echo "2. This build isn't notarized by Apple, so macOS blocks the first launch. Open it once, then go to"
+              echo "   **System Settings → Privacy & Security** and click **Open Anyway**."
+              echo "   Or run: \`xattr -dr com.apple.quarantine /Applications/TrafficControl.app\`"
+              echo "3. In TrafficControl's Settings, click **Make Default**."
+            else
+              echo "2. Open it and click **Make Default** in Settings."
+            fi
+            echo
+            echo "Requires macOS 14 or later. Runs natively on Apple Silicon and Intel."
+            echo
+          } > "$RUNNER_TEMP/notes.md"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/TrafficControl.dmg dist/TrafficControl.zip dist/SHA256SUMS.txt \
+            --title "TrafficControl ${GITHUB_REF_NAME#v}" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --generate-notes
