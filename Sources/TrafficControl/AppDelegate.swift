@@ -170,7 +170,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                 backing: .buffered, defer: false)
             window.contentView = NSHostingView(rootView: root)
-            window.toolbar = NSToolbar()
+            let toolbar = NSToolbar()
+            // The toolbar has no items, so its right-click "Icon and Text / Icon Only / Text Only" menu
+            // would do nothing. (macOS 14 has no way to turn it off.)
+            if #available(macOS 15.0, *) { toolbar.allowsDisplayModeCustomization = false }
+            window.toolbar = toolbar
             window.toolbarStyle = .unified
             window.title = "TrafficControl"
             window.isReleasedWhenClosed = false

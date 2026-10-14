@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6
+
+- Right-clicking the top of the Settings window no longer shows an "Icon and Text / Icon Only / Text Only"
+  menu that did nothing.
+
 ## 0.1.5
 
 - Redesigned Settings window with a sidebar, like System Settings.
