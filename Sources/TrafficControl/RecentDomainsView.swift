@@ -4,7 +4,8 @@ import TrafficControlCore
 /// The sidebar list of domains you've opened links on, each one a click away from becoming a rule.
 struct RecentDomainsList: View {
     @Binding var selection: String?
-    let onCreateRule: (DomainRecord, BrowserTarget?) -> Void
+    /// Address ("github.com" or "github.com/buffer") and the browser to send it to.
+    let onCreateRule: (String, BrowserTarget?) -> Void
     @EnvironmentObject private var model: SettingsModel
     @EnvironmentObject private var browsers: BrowserManager
     @EnvironmentObject private var history: HistoryModel
@@ -30,7 +31,7 @@ struct RecentDomainsList: View {
                                 .foregroundStyle(.secondary)
                                 .help("A rule already handles this domain")
                         } else {
-                            Button { onCreateRule(record, record.preferredBrowser) } label: {
+                            Button { onCreateRule(record.domain, record.preferredBrowser) } label: {
                                 Image(systemName: "plus.circle")
                             }
                             .buttonStyle(.borderless)
@@ -72,7 +73,7 @@ struct RecentDomainsList: View {
 /// Details for one domain: where its links went, and a rule to make that permanent.
 struct DomainDetailView: View {
     let record: DomainRecord
-    let onCreateRule: (DomainRecord, BrowserTarget?) -> Void
+    let onCreateRule: (String, BrowserTarget?) -> Void
     let onShowRule: (Rule) -> Void
     let onRemove: () -> Void
     @EnvironmentObject private var model: SettingsModel
@@ -81,7 +82,7 @@ struct DomainDetailView: View {
 
     init(
         record: DomainRecord,
-        onCreateRule: @escaping (DomainRecord, BrowserTarget?) -> Void,
+        onCreateRule: @escaping (String, BrowserTarget?) -> Void,
         onShowRule: @escaping (Rule) -> Void,
         onRemove: @escaping () -> Void
     ) {
@@ -109,7 +110,20 @@ struct DomainDetailView: View {
                 }
             }
 
-            Section("Rule") {
+            if !record.paths.isEmpty {
+                Section {
+                    ForEach(record.paths) { path in
+                        pathRow(path)
+                    }
+                } header: {
+                    Text("Paths")
+                } footer: {
+                    Text("A rule for a path also covers everything below it, and goes above broader rules so it wins.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Rule for the whole domain") {
                 if let rule = coveringRule(for: record.domain, in: model.settings.rules) {
                     HStack {
                         Text("Handled by “\(rule.name.isEmpty ? "Untitled rule" : rule.name)”")
@@ -124,7 +138,7 @@ struct DomainDetailView: View {
                     HStack {
                         Text("Also matches subdomains of \(record.domain).").font(.caption).foregroundStyle(.secondary)
                         Spacer()
-                        Button("Create Rule") { onCreateRule(record, target) }
+                        Button("Create Rule") { onCreateRule(record.domain, target) }
                             .keyboardShortcut(.defaultAction)
                     }
                 }
@@ -136,10 +150,31 @@ struct DomainDetailView: View {
         }
         .formStyle(.grouped)
     }
+
+    private func pathRow(_ path: PathRecord) -> some View {
+        let address = "\(record.domain)/\(path.segment)"
+        // A rule for the whole domain doesn't count: a path rule can still sit above it.
+        let domainRule = coveringRule(for: record.domain, in: model.settings.rules)
+        let pathRule = coveringRule(for: address, in: model.settings.rules).flatMap { $0.id == domainRule?.id ? nil : $0 }
+        return HStack {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("/" + path.segment)
+                Text("\(path.visits)× · \(path.preferred.map { browsers.title(for: $0) } ?? "–")")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let pathRule {
+                Button("Show Rule") { onShowRule(pathRule) }
+            } else {
+                Button("Create Rule") { onCreateRule(address, path.preferredBrowser) }
+                    .help("Send \(address) and everything below it to \(path.preferredBrowser.map { browsers.title(for: $0) } ?? "the picker")")
+            }
+        }
+    }
 }
 
-/// The enabled rule that would catch a link to the domain's front page, if any.
-func coveringRule(for domain: String, in rules: [Rule]) -> Rule? {
-    guard let url = URL(string: "https://\(domain)/") else { return nil }
+/// The enabled rule that would catch a link to this address ("github.com" or "github.com/buffer"), if any.
+func coveringRule(for address: String, in rules: [Rule]) -> Rule? {
+    guard let url = URL(string: "https://\(address)/") else { return nil }
     return Router.firstMatchingRule(LinkContext(url: url), in: rules)
 }

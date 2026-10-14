@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.4
+
+- Rules can target a path: a rule for `github.com/buffer` sends that page and everything below it
+  (`github.com/buffer/api/pull/1`) to one browser or profile, while `github.com/hakubo` goes to another.
+  New rules start with a Link condition that takes a domain or a domain plus path; you can paste a full URL.
+- A new path rule goes above broader rules that would otherwise catch its links first.
+- Recent Domains lists the paths you open on each domain, with where they went and a button to make a rule.
+- The picker remembers your choice per path, so github.com/buffer and github.com/hakubo can each have their own.
+- Type a link into the tester under Rules and use Create Rule to make a rule for its domain or one of its paths.
+
 ## 0.1.3
 
 - Opening Settings while it's already open now brings the window to the front, also when it's minimized

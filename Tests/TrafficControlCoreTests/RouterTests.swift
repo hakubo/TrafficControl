@@ -268,7 +268,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     }
 
     @Test func ruleForDomainMatchesSubdomains() {
-        let rule = Rule.forDomain("github.com", to: BrowserTarget(browserID: chrome, profileID: "Profile 2"))
+        let rule = Rule.forAddress("github.com", to: BrowserTarget(browserID: chrome, profileID: "Profile 2"))
         #expect(rule.matches(link("https://gist.github.com/x")))
         #expect(rule.action == .open(browserID: chrome, profileID: "Profile 2"))
     }
@@ -308,5 +308,77 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         #expect(hit?.window == 7)
         #expect(hit?.tabIndex == 2)
         #expect(TabMatching.find(URL(string: "https://c.com")!, in: windows) == nil)
+    }
+}
+
+@Suite struct PathRuleTests {
+    private let personal = BrowserTarget(browserID: chrome, profileID: "Default")
+    private let work = BrowserTarget(browserID: chrome, profileID: "Profile 2")
+
+    @Test func linkIsOrIsUnderMatchesWholeSegmentsOnly() {
+        let c = Condition(field: .address, op: .isUnder, value: "github.com/buffer")
+        #expect(c.matches(link("https://github.com/buffer")))
+        #expect(c.matches(link("https://www.github.com/buffer/api/pull/88?w=1")))
+        #expect(c.matches(link("https://GitHub.com/Buffer/")))
+        #expect(!c.matches(link("https://github.com/buffer-labs")))
+        #expect(!c.matches(link("https://github.com/hakubo")))
+        #expect(!c.matches(link("https://gitlab.com/buffer")))
+    }
+
+    @Test func linkValueAcceptsPastedURLsAndBareDomains() {
+        #expect(Condition(field: .address, op: .isUnder, value: "https://www.github.com/hakubo/").matches(link("https://github.com/hakubo/x")))
+        #expect(Condition(field: .address, op: .isUnder, value: "github.com").matches(link("https://gist.github.com/a")))
+    }
+
+    @Test func pathIsOrIsUnderWithOrWithoutSlash() {
+        #expect(Condition(field: .path, op: .isUnder, value: "buffer").matches(link("https://github.com/buffer/api")))
+        #expect(Condition(field: .path, op: .isUnder, value: "/buffer/").matches(link("https://github.com/buffer")))
+        #expect(!Condition(field: .path, op: .isUnder, value: "/buffer").matches(link("https://github.com/bufferx")))
+    }
+
+    @Test func personalAndWorkGitHubRules() {
+        var s = AppSettings()
+        s.rules = [
+            Rule.forAddress("github.com/hakubo", to: personal),
+            Rule.forAddress("github.com/buffer", to: work),
+        ]
+        let env = RoutingEnvironment(installedBrowserIDs: installed, installedProfiles: [chrome: ["Default", "Profile 2"]])
+        #expect(Router.decide(link("https://github.com/hakubo/TrafficControl"), settings: s, environment: env)
+                == .open(personal, ruleID: s.rules[0].id))
+        #expect(Router.decide(link("https://github.com/buffer/web/pull/1"), settings: s, environment: env)
+                == .open(work, ruleID: s.rules[1].id))
+        #expect(Router.decide(link("https://github.com/apple/swift"), settings: s, environment: env) == .ask)
+    }
+
+    @Test func pathRulesGoAboveBroaderRules() {
+        let rules = [Rule.forAddress("example.com", to: nil), Rule.forAddress("github.com", to: work)]
+        #expect(Rule.insertionIndex(for: "github.com/hakubo", in: rules) == 1)
+        #expect(Rule.insertionIndex(for: "gitlab.com/x", in: rules) == 2)
+        #expect(Rule.insertionIndex(for: "github.com", in: rules) == 2)
+    }
+
+    @Test func addressDepth() {
+        let url = URL(string: "https://www.github.com/hakubo/TrafficControl/pulls")!
+        #expect(LinkAddress.of(url, depth: 0) == "github.com")
+        #expect(LinkAddress.of(url, depth: 1) == "github.com/hakubo")
+        #expect(LinkAddress.of(url, depth: 2) == "github.com/hakubo/TrafficControl")
+    }
+
+    @Test func historyRemembersChoicePerPath() {
+        var h = LinkHistory()
+        let t0 = Date(timeIntervalSince1970: 0)
+        for i in 0..<3 { h.record(URL(string: "https://github.com/buffer/r\(i)")!, destination: .browser(work), at: t0 + Double(i)) }
+        h.record(URL(string: "https://github.com/hakubo/x")!, destination: .browser(personal), at: t0 + 10)
+        #expect(h.preferred(for: URL(string: "https://github.com/hakubo/y")!) == .browser(personal))
+        #expect(h.preferred(for: URL(string: "https://github.com/buffer/z")!) == .browser(work))
+        #expect(h.preferred(for: URL(string: "https://github.com/apple")!) == .browser(work))
+        #expect(h.records["github.com"]?.paths.map(\.segment) == ["buffer", "hakubo"])
+    }
+
+    @Test func oldHistoryWithoutPathsStillLoads() throws {
+        let json = #"{"records":{"a.com":{"domain":"a.com","visits":2,"lastOpened":0,"destinations":[]}}}"#
+        let h = try JSONDecoder().decode(LinkHistory.self, from: Data(json.utf8))
+        #expect(h.records["a.com"]?.visits == 2)
+        #expect(h.records["a.com"]?.paths.isEmpty == true)
     }
 }

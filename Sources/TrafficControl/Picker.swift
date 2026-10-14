@@ -95,7 +95,7 @@ final class PickerController {
         let primary = s.primaryBrowser.flatMap { p in list.firstIndex { $0.target == p } }
         let lastActive = browsers.lastActiveBrowserID.flatMap { id in list.firstIndex { $0.browser.id == id } }
         // What you usually pick for this domain beats everything else.
-        let remembered = history.history.record(for: request.url)?.preferred.flatMap { d in list.firstIndex { $0.destination == d } }
+        let remembered = history.history.preferred(for: request.url).flatMap { d in list.firstIndex { $0.destination == d } }
         let initial: Int
         if let remembered {
             initial = remembered

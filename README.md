@@ -48,7 +48,10 @@ TrafficControl updates itself: it checks daily and installs new versions (from 0
 
   When the picker shows such a link, the app is offered as the first choice.
 - **Rules**, checked top to bottom, first match wins. A rule's conditions can look at:
-  - domain (`is or is under`, which matches subdomains), full URL, path
+  - link: a domain or domain plus path (`github.com/buffer` is or is under: that page, everything below it,
+    and its subdomains), so `github.com/buffer` can go to your work profile and `github.com/hakubo` to your
+    personal one
+  - domain, full URL, path
   - source app (bundle ID or name, e.g. links clicked in Slack)
   - match types: is, contains, begins with, ends with, wildcard (`*`, `?`), regex
   - match **all** or **any** condition; action is *open in browser X* or *show the picker*

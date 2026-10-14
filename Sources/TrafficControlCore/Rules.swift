@@ -14,6 +14,8 @@ public struct LinkContext: Sendable, Equatable {
 }
 
 public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
+    /// Domain plus path without the scheme, e.g. "github.com/hakubo".
+    case address
     case host
     case url
     case path
@@ -21,6 +23,7 @@ public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
 
     public var label: String {
         switch self {
+        case .address: "Link"
         case .host: "Domain"
         case .url: "Full URL"
         case .path: "Path"
@@ -31,23 +34,29 @@ public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
     /// Operators that make sense for this field, the first one being the default.
     public var operators: [ConditionOperator] {
         switch self {
+        case .address: [.isUnder, .beginsWith, .equals, .contains, .wildcard, .regex]
         case .host: [.isDomain, .equals, .contains, .beginsWith, .endsWith, .wildcard, .regex]
+        case .path: [.isUnder, .beginsWith, .contains, .equals, .endsWith, .wildcard, .regex]
         case .sourceApp: [.equals, .contains, .beginsWith, .wildcard, .regex]
-        case .url, .path: [.contains, .equals, .beginsWith, .endsWith, .wildcard, .regex]
+        case .url: [.contains, .equals, .beginsWith, .endsWith, .wildcard, .regex]
         }
     }
 
     public var placeholder: String {
         switch self {
+        case .address: "github.com/hakubo"
         case .host: "github.com"
         case .url: "https://example.com/*"
-        case .path: "/meeting"
+        case .path: "/hakubo"
         case .sourceApp: "com.tinyspeck.slackmacgap or Slack"
         }
     }
 }
 
 public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable {
+    /// The address or path itself, or anything below it: "github.com/buffer" matches
+    /// "github.com/buffer/api" and "eu.github.com/buffer", not "github.com/buffer-x".
+    case isUnder
     case isDomain
     case equals
     case contains
@@ -58,7 +67,7 @@ public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable
 
     public var label: String {
         switch self {
-        case .isDomain: "is or is under"
+        case .isUnder, .isDomain: "is or is under"
         case .equals: "is"
         case .contains: "contains"
         case .beginsWith: "begins with"
@@ -84,11 +93,23 @@ public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable
         case .isDomain:
             let domain = p.hasPrefix(".") ? String(p.dropFirst()) : p
             return s == domain || s.hasSuffix("." + domain)
+        case .isUnder:
+            let (subjectHost, subjectPath) = Self.split(s)
+            let (host, path) = Self.split(LinkAddress.normalize(p))
+            let hostMatches = host.isEmpty || subjectHost == host || subjectHost.hasSuffix("." + host)
+            let pathMatches = path.isEmpty || subjectPath == path || subjectPath.hasPrefix(path + "/")
+            return hostMatches && pathMatches
         case .wildcard:
             return Self.matches(s, regex: Self.wildcardToRegex(p))
         case .regex:
             return Self.matches(subject, regex: pattern)
         }
+    }
+
+    /// "github.com/buffer/api" → ("github.com", "/buffer/api"); "/buffer" → ("", "/buffer").
+    static func split(_ address: String) -> (host: String, path: String) {
+        guard let slash = address.firstIndex(of: "/") else { return (address, "") }
+        return (String(address[..<slash]), String(address[slash...]))
     }
 
     static func wildcardToRegex(_ wildcard: String) -> String {
@@ -107,13 +128,47 @@ public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable
     }
 }
 
+/// A link written without its scheme: host (minus "www.") plus path, e.g. "github.com/hakubo/api".
+public enum LinkAddress {
+    /// The whole address of an http(s) link, or nil for other schemes.
+    public static func of(_ url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              var host = url.host()?.lowercased(), !host.isEmpty
+        else { return nil }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        return host + url.path(percentEncoded: false)
+    }
+
+    /// The domain plus up to `depth` path segments: depth 1 of github.com/hakubo/api is "github.com/hakubo".
+    public static func of(_ url: URL, depth: Int) -> String? {
+        guard let address = of(url) else { return nil }
+        let parts = address.split(separator: "/", omittingEmptySubsequences: true)
+        return parts.prefix(depth + 1).joined(separator: "/")
+    }
+
+    /// The path segments of a link, e.g. ["hakubo", "api"].
+    public static func segments(of url: URL) -> [String] {
+        url.path(percentEncoded: false).split(separator: "/").map(String.init)
+    }
+
+    /// Accepts what people paste: drops the scheme, "www.", a trailing slash, query and fragment.
+    public static func normalize(_ text: String) -> String {
+        var s = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        for prefix in ["https://", "http://"] where s.hasPrefix(prefix) { s.removeFirst(prefix.count) }
+        if s.hasPrefix("www.") { s.removeFirst(4) }
+        if let cut = s.firstIndex(where: { $0 == "?" || $0 == "#" }) { s = String(s[..<cut]) }
+        while s.count > 1, s.hasSuffix("/") { s.removeLast() }
+        return s == "/" ? "" : s
+    }
+}
+
 public struct Condition: Codable, Identifiable, Equatable, Hashable, Sendable {
     public var id: UUID
     public var field: ConditionField
     public var op: ConditionOperator
     public var value: String
 
-    public init(id: UUID = UUID(), field: ConditionField = .host, op: ConditionOperator? = nil, value: String = "") {
+    public init(id: UUID = UUID(), field: ConditionField = .address, op: ConditionOperator? = nil, value: String = "") {
         self.id = id
         self.field = field
         self.op = op ?? field.operators[0]
@@ -121,11 +176,13 @@ public struct Condition: Codable, Identifiable, Equatable, Hashable, Sendable {
     }
 
     public func matches(_ context: LinkContext) -> Bool {
-        let pattern = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        var pattern = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !pattern.isEmpty else { return false }
+        if field == .path, op == .isUnder, !pattern.hasPrefix("/") { pattern = "/" + pattern }
         let subjects: [String]
         switch field {
         case .url: subjects = [context.url.absoluteString]
+        case .address: subjects = [LinkAddress.of(context.url)].compactMap { $0 }
         case .host: subjects = [context.url.host() ?? ""]
         case .path: subjects = [context.url.path(percentEncoded: false)]
         case .sourceApp: subjects = [context.sourceBundleID, context.sourceAppName].compactMap { $0 }

@@ -288,7 +288,7 @@ struct RulesSettingsView: View {
 
                     switch pane {
                     case .rules: rulesList
-                    case .domains: RecentDomainsList(selection: $domainSelection, onCreateRule: createRule)
+                    case .domains: RecentDomainsList(selection: $domainSelection, onCreateRule: createRule(address:target:))
                     }
                 }
                 .frame(width: 260)
@@ -305,6 +305,15 @@ struct RulesSettingsView: View {
                 TextField("Try a link, e.g. https://github.com/apple/swift", text: $testURL)
                     .textFieldStyle(.roundedBorder)
                 Text(testResult).foregroundStyle(.secondary).lineLimit(1)
+                if let url = testedURL {
+                    Menu("Create Rule") {
+                        ForEach(ruleScopes(for: url), id: \.self) { address in
+                            Button(address) { createRule(address: address, target: suggestedTarget(for: url)) }
+                        }
+                    }
+                    .fixedSize()
+                    .help("Make a rule for this link's domain or one of its paths")
+                }
             }
             .padding(10)
         }
@@ -358,7 +367,7 @@ struct RulesSettingsView: View {
         if let domain = domainSelection, let record = history.history.records[domain] {
             DomainDetailView(
                 record: record,
-                onCreateRule: createRule,
+                onCreateRule: createRule(address:target:),
                 onShowRule: { rule in
                     selection = rule.id
                     pane = .rules
@@ -382,11 +391,30 @@ struct RulesSettingsView: View {
         }
     }
 
-    private func createRule(for record: DomainRecord, target: BrowserTarget?) {
-        let rule = Rule.forDomain(record.domain, to: target)
-        model.settings.rules.append(rule)
+    /// Adds a rule for a domain or path; path rules go above broader rules that would hide them.
+    private func createRule(address: String, target: BrowserTarget?) {
+        let rule = Rule.forAddress(address, to: target)
+        model.settings.rules.insert(rule, at: Rule.insertionIndex(for: address, in: model.settings.rules))
         selection = rule.id
         pane = .rules
+    }
+
+    private var testedURL: URL? {
+        let trimmed = testURL.trimmingCharacters(in: .whitespaces)
+        guard let url = URL(string: trimmed), LinkAddress.of(url) != nil else { return nil }
+        return url
+    }
+
+    /// "github.com", "github.com/hakubo", "github.com/hakubo/TrafficControl" for the tested link.
+    private func ruleScopes(for url: URL) -> [String] {
+        let depth = min(2, LinkAddress.segments(of: url).count)
+        return (0...depth).compactMap { LinkAddress.of(url, depth: $0) }
+    }
+
+    /// What you usually pick for this link, else the first browser in the picker.
+    private func suggestedTarget(for url: URL) -> BrowserTarget? {
+        if case .browser(let target) = history.history.preferred(for: url) { return target }
+        return browsers.pickerChoices(model.settings).first?.target
     }
 
     private var testResult: String {
