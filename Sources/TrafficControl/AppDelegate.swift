@@ -18,6 +18,7 @@ enum TrafficControlMain {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let settings = SettingsModel()
     let history = HistoryModel()
+    let updater = UpdaterModel()
     lazy var browsers = BrowserManager()
     lazy var picker = PickerController(settings: settings, browsers: browsers, history: history)
     lazy var router = LinkRouter(settings: settings, browsers: browsers, picker: picker, history: history)
@@ -81,6 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clipboard.target = self
         clipboard.isEnabled = clipboardURL != nil
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        if updater.isAvailable {
+            menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Buy Me a Coffee…", action: #selector(buyMeACoffee), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Quit TrafficControl", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -99,6 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         picker.enqueue(PickerRequest(url: url, sourceApp: nil))
     }
 
+    @objc private func checkForUpdates() {
+        updater.checkForUpdates()
+    }
+
     @objc private func buyMeACoffee() {
         NSWorkspace.shared.open(Links.buyMeACoffee)
     }
@@ -114,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 .environmentObject(settings)
                 .environmentObject(browsers)
                 .environmentObject(history)
+                .environmentObject(updater)
             let window = NSWindow(contentViewController: NSHostingController(rootView: root))
             window.title = "TrafficControl"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]

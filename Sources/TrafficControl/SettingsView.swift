@@ -18,6 +18,7 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     @EnvironmentObject private var model: SettingsModel
     @EnvironmentObject private var browsers: BrowserManager
+    @EnvironmentObject private var updater: UpdaterModel
     @State private var isDefault = DefaultBrowser.isDefault
     @State private var launchAtLogin = LoginItem.isEnabled
 
@@ -76,6 +77,26 @@ struct GeneralSettingsView: View {
                 if !model.settings.showMenuBarIcon {
                     Text("Open TrafficControl from Finder or Spotlight to get back here.")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            if updater.isAvailable {
+                Section("Updates") {
+                    Toggle("Check for updates automatically", isOn: Binding(
+                        get: { updater.automaticallyChecks },
+                        set: { updater.automaticallyChecks = $0 }))
+                    Toggle("Download and install updates automatically", isOn: Binding(
+                        get: { updater.automaticallyDownloads },
+                        set: { updater.automaticallyDownloads = $0 }))
+                        .disabled(!updater.automaticallyChecks)
+                    HStack {
+                        if let last = updater.lastCheck {
+                            Text("Last checked \(last.formatted(.relative(presentation: .named)))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Check Now") { updater.checkForUpdates() }
+                    }
                 }
             }
 

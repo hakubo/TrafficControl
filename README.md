@@ -9,12 +9,22 @@ straight to the right browser based on your rules, or shows a picker so you can 
 
 ## Install
 
+With [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask hakubo/tap/trafficcontrol
+```
+
+Or by hand:
+
 1. Download `TrafficControl.dmg` from the [latest release](https://github.com/hakubo/TrafficControl/releases/latest),
    open it and drag TrafficControl into Applications.
 2. Releases aren't notarized by Apple yet, so macOS blocks the first launch. Open the app once, then go to
    **System Settings → Privacy & Security** and click **Open Anyway**, or run
    `xattr -dr com.apple.quarantine /Applications/TrafficControl.app`.
 3. In TrafficControl's Settings, click **Make Default** and confirm the macOS prompt.
+
+TrafficControl updates itself: it checks daily and installs new versions (from 0.1.1 on).
 
 ## Features
 
@@ -77,6 +87,13 @@ make icon      # redraws Resources/AppIcon.icns and docs/icon.png from scripts/m
 ```
 
 ## Releasing
+
+Each release also publishes `appcast.xml`, the feed the app's updater ([Sparkle](https://sparkle-project.org))
+reads from `releases/latest/download/appcast.xml`. Updates are signed with an EdDSA key: the public half is
+`SUPublicEDKey` in `Resources/Info.plist`, the private half lives in your login keychain and in the
+`SPARKLE_PRIVATE_KEY` repository secret. Keep a backup of it; without it, installed copies can't be updated.
+The Homebrew cask lives in [hakubo/homebrew-tap](https://github.com/hakubo/homebrew-tap) and always points at
+the latest release, so it needs no changes per release.
 
 Add a `## <version>` section to `CHANGELOG.md` (it becomes the release notes), bump
 `CFBundleShortVersionString` in `Resources/Info.plist`, then push a version tag. GitHub Actions builds,

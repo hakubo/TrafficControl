@@ -28,6 +28,15 @@
 	<string>public.app-category.utilities</string>
 	<key>LSUIElement</key>
 	<true/>
+	<!-- Sparkle: the feed is attached to every GitHub release; updates must be signed with the matching private key. -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/hakubo/TrafficControl/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>RtK3mVL0R5bmKQbULAIC7noJOqnzYw6ERPrwAthE34Q=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>TrafficControl checks your browser's open tabs so it can switch to a tab that already shows a link instead of opening a duplicate.</string>
 	<key>NSHighResolutionCapable</key>

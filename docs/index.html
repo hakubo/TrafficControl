@@ -224,6 +224,9 @@
       counter-increment: step; content: counter(step);
       font: 800 30px/1 var(--display); color: var(--amber-ink);
     }
+    .install-main { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+    .brew { display: flex; flex-direction: column; gap: 8px; }
+    .updates { margin: 0; color: var(--ink-soft); font-size: 15px; }
     .gate { background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
     .gate h3 { font: 700 18px/1.3 var(--body); }
     .gate p { margin: 0; color: var(--ink-soft); font-size: 15px; }
@@ -368,17 +371,27 @@
         <h2>Up and running in a minute</h2>
       </div>
       <div class="install">
+        <div class="install-main">
+        <div class="brew">
+          <span class="label">With Homebrew</span>
+          <div class="cmd">
+            <code id="brew">brew install --cask hakubo/tap/trafficcontrol</code>
+            <button type="button" data-copy="brew">Copy</button>
+          </div>
+        </div>
         <ol class="steps">
           <li><div>Download <a href="https://github.com/hakubo/TrafficControl/releases/latest/download/TrafficControl.dmg"><strong>TrafficControl.dmg</strong></a>, open it and drag TrafficControl into Applications.</div></li>
           <li><div>Open TrafficControl. It lives in the menu bar, not the Dock.</div></li>
           <li><div>In Settings, click <strong>Make Default</strong> and confirm the macOS prompt. Click a link anywhere to try it.</div></li>
         </ol>
+        <p class="updates">After that it keeps itself up to date: TrafficControl checks for new versions daily and installs them for you.</p>
+        </div>
         <div class="gate">
           <h3>macOS says it can't verify the app?</h3>
           <p>Releases aren't notarized by Apple yet. After the first attempt to open it, go to System Settings → Privacy &amp; Security and click <strong>Open Anyway</strong>. Or run this in Terminal:</p>
           <div class="cmd">
             <code id="xattr">xattr -dr com.apple.quarantine /Applications/TrafficControl.app</code>
-            <button type="button" id="copy">Copy</button>
+            <button type="button" data-copy="xattr">Copy</button>
           </div>
         </div>
       </div>
@@ -423,19 +436,20 @@
       })
       .catch(() => {});
 
-    document.getElementById("copy").addEventListener("click", event => {
-      const button = event.currentTarget;
-      const text = document.getElementById("xattr").textContent;
-      const done = label => { button.textContent = label; setTimeout(() => (button.textContent = "Copy"), 1600); };
-      navigator.clipboard.writeText(text).then(() => done("Copied"), () => {
-        const range = document.createRange();
-        range.selectNodeContents(document.getElementById("xattr"));
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-        done("Press ⌘C");
+    for (const button of document.querySelectorAll("[data-copy]")) {
+      button.addEventListener("click", () => {
+        const source = document.getElementById(button.dataset.copy);
+        const done = label => { button.textContent = label; setTimeout(() => (button.textContent = "Copy"), 1600); };
+        navigator.clipboard.writeText(source.textContent).then(() => done("Copied"), () => {
+          const range = document.createRange();
+          range.selectNodeContents(source);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          done("Press ⌘C");
+        });
       });
-    });
+    }
 
     // Radar scope: blips light up as the sweep passes and fade like phosphor.
     (() => {

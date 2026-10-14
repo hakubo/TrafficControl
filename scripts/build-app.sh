@@ -16,8 +16,11 @@ for arch in $ARCHS; do
 done
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 lipo -create "${binaries[@]}" -output "$APP/Contents/MacOS/TrafficControl"
+# Sparkle ships as a universal xcframework; ditto keeps its symlinks intact.
+ditto .build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework \
+    "$APP/Contents/Frameworks/Sparkle.framework"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
@@ -28,6 +31,6 @@ fi
 plutil -replace CFBundleVersion -string "${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}" "$PLIST"
 
 # Ad-hoc signature for local use; scripts/package.sh re-signs with a Developer ID when one is configured.
-codesign --force --sign - "$APP"
+codesign --force --deep --sign - "$APP"
 
 echo "Built $APP ($(lipo -archs "$APP/Contents/MacOS/TrafficControl"))"

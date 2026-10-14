@@ -17,6 +17,14 @@ rm -rf "$DIST"
 mkdir -p "$DIST"
 
 if [ -n "${SIGN_IDENTITY:-}" ]; then
+    # Sparkle's helpers are signed inside-out first, as its documentation describes.
+    SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+    sign() { codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$@"; }
+    sign "$SPARKLE/Versions/B/XPCServices/Installer.xpc"
+    sign --preserve-metadata=entitlements "$SPARKLE/Versions/B/XPCServices/Downloader.xpc"
+    sign "$SPARKLE/Versions/B/Autoupdate"
+    sign "$SPARKLE/Versions/B/Updater.app"
+    sign "$SPARKLE"
     codesign --force --options runtime --timestamp \
         --entitlements Resources/TrafficControl.entitlements \
         --sign "$SIGN_IDENTITY" "$APP"

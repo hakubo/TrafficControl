@@ -7,6 +7,10 @@ name: Release
 #   DEVELOPER_ID_P12_PASSWORD  its export password
 #   SIGN_IDENTITY              e.g. "Developer ID Application: Your Name (TEAMID)"
 #   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarization (app-specific password)
+#
+# Required secret for automatic updates:
+#   SPARKLE_PRIVATE_KEY  the EdDSA key matching SUPublicEDKey in Info.plist; export it with
+#     .build/artifacts/sparkle/Sparkle/bin/generate_keys --account TrafficControl -x key.txt
 on:
   push:
     tags: ["v*"]
@@ -52,6 +56,16 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: bash scripts/package.sh
 
+      - name: Sign update and write appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "::error::The SPARKLE_PRIVATE_KEY secret is missing, so this release can't be offered as an automatic update."
+            exit 1
+          fi
+          bash scripts/make-appcast.sh
+
       - name: Write release notes
         run: |
           {
@@ -63,6 +77,11 @@ jobs:
               echo
             fi
             echo "### Install"
+            echo "Already have 0.1.1 or later? It updates itself."
+            echo
+            echo "With Homebrew: \`brew install --cask hakubo/tap/trafficcontrol\`"
+            echo
+            echo "Or by hand:"
             echo "1. Download **TrafficControl.dmg**, open it and drag TrafficControl into Applications."
             if [ "$SIGNED" != "true" ]; then
               echo "2. This build isn't notarized by Apple, so macOS blocks the first launch. Open it once, then go to"
@@ -81,7 +100,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/TrafficControl.dmg dist/TrafficControl.zip dist/SHA256SUMS.txt \
+          gh release create "$GITHUB_REF_NAME" dist/TrafficControl.dmg dist/TrafficControl.zip dist/SHA256SUMS.txt dist/appcast.xml \
             --title "TrafficControl ${GITHUB_REF_NAME#v}" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --generate-notes
