@@ -213,7 +213,7 @@ struct GeneralSettingsView: View {
                     ForEach(TabReuseMode.allCases, id: \.self) { Text($0.label).tag($0) }
                 } label: {
                     Text("Link already open in a tab")
-                    Text("Hold ⌥ Option while clicking to skip the check")
+                    Text("Hold \(model.settings.pickerModifier.symbol) \(model.settings.pickerModifier.name) while clicking to skip the check")
                 }
             } header: {
                 Text("Open tabs")
@@ -234,7 +234,7 @@ struct GeneralSettingsView: View {
                 if model.settings.forcePickerWithOption {
                     Picker(selection: $model.settings.pickerModifier) {
                         // No ⌃ Control: Control-click is a right-click on macOS.
-                        ForEach([ModifierKey.option, .shift, .command], id: \.self) { key in
+                        ForEach([ModifierKey.shift, .option, .command], id: \.self) { key in
                             Text("\(key.symbol) \(key.name)").tag(key)
                         }
                     } label: {
@@ -575,7 +575,7 @@ struct AppsSettingsView: View {
                     .opacity(appURL == nil ? 0.6 : 1)
                 }
             } footer: {
-                Text("Hold ⌥ Option while clicking to get the picker instead; the app is offered there too.")
+                Text("Hold \(model.settings.pickerModifier.symbol) \(model.settings.pickerModifier.name) while clicking to get the picker instead; the app is offered there too.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

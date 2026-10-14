@@ -4,8 +4,9 @@
 
 - Holding a key while clicking a link to get the picker now works reliably: TrafficControl looks at the
   keys you held when you clicked, not only when the link arrives, which is often after you let go.
-- Choose the key: ⌥ Option, ⇧ Shift or ⌘ Command (Settings → General). Some apps use ⌥-click
-  themselves, such as Slack, which marks the message unread.
+- The key is now ⇧ Shift by default, and you can choose ⌥ Option or ⌘ Command instead
+  (Settings → General). ⌥ was the default before, but some apps use ⌥-click themselves, such as Slack,
+  which marks the message unread.
 - New rule condition, Keys held: for example "Keys held include ⌘" → Safari. When such a rule
   matches, TrafficControl doesn't switch to an already open tab elsewhere.
 - Right-clicking the top of the Settings window no longer shows an "Icon and Text / Icon Only / Text Only"

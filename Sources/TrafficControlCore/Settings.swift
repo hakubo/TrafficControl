@@ -33,7 +33,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var showMenuBarIcon = true
     /// Holding `pickerModifier` while clicking a link skips everything and shows the picker.
     public var forcePickerWithOption = true
-    public var pickerModifier = ModifierKey.option
+    public var pickerModifier = ModifierKey.shift
     public var rememberDomains = true
     public var tabReuse = TabReuseMode.anyBrowser
 

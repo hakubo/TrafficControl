@@ -476,12 +476,12 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
                 == .open(BrowserTarget(browserID: chrome), ruleID: s.rules[1].id))
     }
 
-    @Test func pickerKeyDefaultsToOptionAndLoadsFromOlderSettings() throws {
-        #expect(AppSettings().pickerModifier == .option)
+    @Test func pickerKeyDefaultsToShiftAndLoadsFromOlderSettings() throws {
+        #expect(AppSettings().pickerModifier == .shift)
         let old = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"forcePickerWithOption": false}"#.utf8))
         #expect(old.forcePickerWithOption == false)
-        #expect(old.pickerModifier == .option)
-        let shift = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"pickerModifier": "shift"}"#.utf8))
-        #expect(shift.pickerModifier == .shift)
+        #expect(old.pickerModifier == .shift)
+        let option = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"pickerModifier": "option"}"#.utf8))
+        #expect(option.pickerModifier == .option)
     }
 }
