@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clipboard.isEnabled = clipboardURL != nil
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Buy Me a Coffee…", action: #selector(buyMeACoffee), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Quit TrafficControl", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
@@ -96,6 +97,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openClipboard() {
         guard let url = clipboardURL else { return }
         picker.enqueue(PickerRequest(url: url, sourceApp: nil))
+    }
+
+    @objc private func buyMeACoffee() {
+        NSWorkspace.shared.open(Links.buyMeACoffee)
     }
 
     @objc private func makeDefault() {

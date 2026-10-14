@@ -51,6 +51,12 @@ final class HistoryModel: ObservableObject {
     }
 }
 
+enum Links {
+    static let website = URL(string: "https://hakubo.github.io/TrafficControl/")!
+    static let repository = URL(string: "https://github.com/hakubo/TrafficControl")!
+    static let buyMeACoffee = URL(string: "https://buymeacoffee.com/jakubolek")!
+}
+
 enum DefaultBrowser {
     static var isDefault: Bool {
         guard let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),

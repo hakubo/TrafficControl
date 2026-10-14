@@ -78,6 +78,25 @@ struct GeneralSettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+
+            Section("About") {
+                HStack(spacing: 12) {
+                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 40, height: 40)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("TrafficControl").font(.headline)
+                        Text("Version \(appVersion)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Website") { NSWorkspace.shared.open(Links.website) }
+                    Button("GitHub") { NSWorkspace.shared.open(Links.repository) }
+                }
+                HStack {
+                    Text("TrafficControl is free. If it saves you some tab juggling, you can buy me a coffee.")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Buy Me a Coffee") { NSWorkspace.shared.open(Links.buyMeACoffee) }
+                }
+            }
         }
         .formStyle(.grouped)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -85,6 +104,13 @@ struct GeneralSettingsView: View {
             launchAtLogin = LoginItem.isEnabled
         }
     }
+}
+
+private var appVersion: String {
+    let info = Bundle.main.infoDictionary
+    let version = info?["CFBundleShortVersionString"] as? String ?? "–"
+    let build = info?["CFBundleVersion"] as? String
+    return build.map { "\(version) (\($0))" } ?? version
 }
 
 // MARK: - Browsers
