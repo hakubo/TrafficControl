@@ -7,9 +7,6 @@ straight to the right browser based on your rules, or shows a picker so you can 
 **[Download](https://github.com/hakubo/TrafficControl/releases/latest/download/TrafficControl.dmg)** ·
 [Website](https://hakubo.github.io/TrafficControl/) · macOS 14+, Apple Silicon and Intel
 
-> **TrafficControl is a simple version of [Choosy](https://choosy.app).** If you want something more
-> robust and polished, with more options and an actively supported app, Choosy is the better choice.
-
 ## Install
 
 1. Download `TrafficControl.dmg` from the [latest release](https://github.com/hakubo/TrafficControl/releases/latest),
@@ -114,3 +111,8 @@ macOS prompt.
 - Firefox and Safari profiles (Chromium-based browsers only for now)
 - An app icon (`Resources/AppIcon.icns` is picked up automatically if present)
 - Rewriting URLs before opening them (stripping tracking parameters, unwrapping redirect links)
+
+## Looking for more?
+
+TrafficControl is a simple version of [Choosy](https://choosy.app). If you want something more robust,
+with more options, Choosy is the better choice.

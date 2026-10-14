@@ -176,7 +176,7 @@
     :root[data-theme="dark"] .strip[data-via="rule"] { --tag-ink: #6fd3a0; }
 
     /* Choosy note */
-    .choosy { border-block: 1px solid var(--rule); }
+    .choosy { border-top: 1px solid var(--rule); margin-top: 88px; }
     .choosy .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 32px; padding-block: 26px; }
     .choosy p { margin: 0; max-width: 70ch; color: var(--ink-soft); }
     .choosy p strong { color: var(--ink); }
@@ -238,7 +238,7 @@
     .privacy p { margin: 0; max-width: 68ch; color: var(--ink-soft); }
     .privacy code { font: 400 14px/1.5 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
 
-    footer { margin-top: 96px; border-top: 1px solid var(--rule); }
+    footer { margin-top: 32px; border-top: 1px solid var(--rule); }
     footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; padding-block: 28px 40px; font-size: 14px; color: var(--ink-soft); }
 
     @media (max-width: 900px) {
@@ -303,12 +303,6 @@
       </figure>
     </div>
 
-    <aside class="choosy">
-      <div class="wrap">
-        <p><strong>TrafficControl is a simple version of Choosy.</strong> If you want something more robust, with more options and an actively supported app, Choosy is the better choice.</p>
-        <a class="out" href="https://choosy.app">Visit choosy.app →</a>
-      </div>
-    </aside>
 
     <section class="block wrap" id="routing">
       <div class="block-head">
@@ -394,6 +388,13 @@
       </div>
       <p>TrafficControl makes no network requests of its own. Settings and the list of domains you've opened are plain JSON files in <code>~/Library/Application Support/TrafficControl</code>. It reads your browsers' open tabs only to switch to one, and only after macOS asks for your permission.</p>
     </section>
+
+    <aside class="choosy">
+      <div class="wrap">
+        <p><strong>TrafficControl is a simple version of Choosy.</strong> If you want something more robust with more options, Choosy is the better choice.</p>
+        <a class="out" href="https://choosy.app">Visit choosy.app →</a>
+      </div>
+    </aside>
   </main>
 
   <footer>
