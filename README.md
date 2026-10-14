@@ -58,7 +58,7 @@ TrafficControl updates itself: it checks daily and installs new versions (from 0
 - **Switch to an open tab** instead of opening a duplicate: in Safari and Chromium browsers (Chrome, Brave, Edge,
   Vivaldi, Chromium), TrafficControl asks the running browsers for their tabs over AppleScript and focuses a match.
   Matching ignores http/https, `www.`, a trailing slash, the `#fragment` and tracking parameters (`utm_*`, `fbclid`…).
-  Looks in any running browser by default, or only in the browser the link would open in; holding ⌥ skips it.
+  Looks in any running browser by default, or only in the browser the link would open in; holding the picker key skips it.
   macOS asks once per browser for permission; without it links just open normally. Chrome's AppleScript doesn't
   say which profile a window belongs to, so a tab open in another profile counts as open. Firefox can't be supported
   (no AppleScript access to tabs).
@@ -69,7 +69,8 @@ TrafficControl updates itself: it checks daily and installs new versions (from 0
   marked ✓. Kept in `history.json` next to the settings (last 500 domains); can be turned off or cleared.
 - **When no rule matches**: always ask, use the primary browser, use the only running
   browser, or use the most recently active running browser. The picker is the fallback.
-- Hold **⌥ Option** while clicking a link to force the picker.
+- Hold **⌥ Option** (or ⇧ Shift or ⌘ Command, your choice) while clicking a link to skip rules and get the picker.
+- Rules can also check which keys you hold: for example, ⌘-click sends links to Safari.
 - Reorder browsers, and hide browsers or individual profiles from the picker.
 - Launch at login, hide the menu bar icon, open the link on the clipboard.
 

@@ -1,15 +1,52 @@
 import Foundation
 
+/// A modifier key held while clicking a link.
+public enum ModifierKey: String, Codable, CaseIterable, Sendable, Hashable {
+    // In the order macOS writes them: ⌃⌥⇧⌘.
+    case control, option, shift, command
+
+    public var symbol: String {
+        switch self {
+        case .control: "⌃"
+        case .option: "⌥"
+        case .shift: "⇧"
+        case .command: "⌘"
+        }
+    }
+
+    public var name: String {
+        switch self {
+        case .control: "Control"
+        case .option: "Option"
+        case .shift: "Shift"
+        case .command: "Command"
+        }
+    }
+
+    /// "⌥⌘" for [.command, .option].
+    public static func symbols(_ keys: Set<ModifierKey>) -> String {
+        allCases.filter(keys.contains).map(\.symbol).joined()
+    }
+
+    /// The keys named in a string of symbols such as "⌥⌘"; anything else is ignored.
+    public static func parse(_ symbols: String) -> Set<ModifierKey> {
+        Set(allCases.filter { symbols.contains($0.symbol) })
+    }
+}
+
 /// Everything known about a link at the moment it is clicked.
 public struct LinkContext: Sendable, Equatable {
     public var url: URL
     public var sourceBundleID: String?
     public var sourceAppName: String?
+    /// Modifier keys held when the link was clicked.
+    public var modifiers: Set<ModifierKey>
 
-    public init(url: URL, sourceBundleID: String? = nil, sourceAppName: String? = nil) {
+    public init(url: URL, sourceBundleID: String? = nil, sourceAppName: String? = nil, modifiers: Set<ModifierKey> = []) {
         self.url = url
         self.sourceBundleID = sourceBundleID
         self.sourceAppName = sourceAppName
+        self.modifiers = modifiers
     }
 }
 
@@ -21,9 +58,11 @@ public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
     case url
     case path
     case sourceApp
+    /// Modifier keys held while clicking; the value is their symbols, e.g. "⌘" or "⌥⇧".
+    case modifiers
 
     /// The fields offered when editing a condition.
-    public static let selectable: [ConditionField] = [.host, .path, .url, .sourceApp]
+    public static let selectable: [ConditionField] = [.host, .path, .url, .sourceApp, .modifiers]
 
     public var label: String {
         switch self {
@@ -32,6 +71,7 @@ public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
         case .url: "Full URL"
         case .path: "Path"
         case .sourceApp: "Source app"
+        case .modifiers: "Keys held"
         }
     }
 
@@ -43,6 +83,7 @@ public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
         case .path: [.isUnder, .equals, .beginsWith, .contains, .endsWith, .wildcard, .regex]
         case .sourceApp: [.equals, .contains, .beginsWith, .wildcard, .regex]
         case .url: [.contains, .equals, .beginsWith, .endsWith, .wildcard, .regex]
+        case .modifiers: [.includeKeys, .exactKeys]
         }
     }
 
@@ -53,6 +94,7 @@ public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
         case .url: "https://example.com/*"
         case .path: "/buffer"
         case .sourceApp: "com.tinyspeck.slackmacgap or Slack"
+        case .modifiers: "⌘"
         }
     }
 }
@@ -68,6 +110,10 @@ public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable
     case endsWith
     case wildcard
     case regex
+    /// Keys held include all of these (others may be held too).
+    case includeKeys
+    /// Exactly these keys are held.
+    case exactKeys
 
     public var label: String {
         switch self {
@@ -79,6 +125,8 @@ public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable
         case .endsWith: "ends with"
         case .wildcard: "matches wildcard"
         case .regex: "matches regex"
+        case .includeKeys: "include"
+        case .exactKeys: "are exactly"
         }
     }
 
@@ -108,6 +156,9 @@ public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable
             return Self.matches(s, regex: Self.wildcardToRegex(p))
         case .regex:
             return Self.matches(subject, regex: pattern)
+        case .includeKeys, .exactKeys:
+            // Keys are matched in Condition.matches, which has the set of held keys.
+            return false
         }
     }
 
@@ -183,6 +234,11 @@ public struct Condition: Codable, Identifiable, Equatable, Hashable, Sendable {
     public func matches(_ context: LinkContext) -> Bool {
         var pattern = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !pattern.isEmpty else { return false }
+        if field == .modifiers {
+            let wanted = ModifierKey.parse(pattern)
+            guard !wanted.isEmpty else { return false }
+            return op == .exactKeys ? context.modifiers == wanted : wanted.isSubset(of: context.modifiers)
+        }
         if field == .path, op == .isUnder, !pattern.hasPrefix("/") { pattern = "/" + pattern }
         let subjects: [String]
         switch field {
@@ -191,6 +247,7 @@ public struct Condition: Codable, Identifiable, Equatable, Hashable, Sendable {
         case .host: subjects = [context.url.host() ?? ""]
         case .path: subjects = [context.url.path(percentEncoded: false)]
         case .sourceApp: subjects = [context.sourceBundleID, context.sourceAppName].compactMap { $0 }
+        case .modifiers: subjects = []
         }
         return subjects.contains { op.evaluate($0, pattern: pattern) }
     }

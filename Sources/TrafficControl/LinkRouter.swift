@@ -8,6 +8,37 @@ private extension RoutingDecision {
     }
 }
 
+/// Which modifier keys were held for the click that opened a link. Apps hand links to macOS a moment
+/// after the click, often after the keys are released, so the keys held at the last mouse click
+/// (within a couple of seconds) count as well as those held now. Watching clicks needs no permission.
+@MainActor
+final class ModifierTracker {
+    private var lastClick: (keys: Set<ModifierKey>, at: Date)?
+    private var monitor: Any?
+
+    init() {
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            let keys = Self.keys(in: event.modifierFlags)
+            MainActor.assumeIsolated { self?.lastClick = (keys, Date()) }
+        }
+    }
+
+    func held() -> Set<ModifierKey> {
+        var keys = Self.keys(in: NSEvent.modifierFlags)
+        if let click = lastClick, Date().timeIntervalSince(click.at) < 2 { keys.formUnion(click.keys) }
+        return keys
+    }
+
+    nonisolated static func keys(in flags: NSEvent.ModifierFlags) -> Set<ModifierKey> {
+        var keys: Set<ModifierKey> = []
+        if flags.contains(.control) { keys.insert(.control) }
+        if flags.contains(.option) { keys.insert(.option) }
+        if flags.contains(.shift) { keys.insert(.shift) }
+        if flags.contains(.command) { keys.insert(.command) }
+        return keys
+    }
+}
+
 /// Turns an incoming link into a decision: open directly, or ask with the picker.
 @MainActor
 final class LinkRouter {
@@ -15,6 +46,7 @@ final class LinkRouter {
     private let browsers: BrowserManager
     private let picker: PickerController
     private let history: HistoryModel
+    private let modifiers = ModifierTracker()
 
     init(settings: SettingsModel, browsers: BrowserManager, picker: PickerController, history: HistoryModel) {
         self.settings = settings
@@ -27,11 +59,13 @@ final class LinkRouter {
         if browsers.installed.isEmpty { browsers.refresh() } else { browsers.refreshProfiles() }
         let source = sourceApplication(pid: senderPID)
         let current = settings.settings
-        let forcePicker = current.forcePickerWithOption && NSEvent.modifierFlags.contains(.option)
+        let held = modifiers.held()
+        let forcePicker = current.forcePickerWithOption && held.contains(current.pickerModifier)
 
         for url in urls {
             let context = LinkContext(
-                url: url, sourceBundleID: source?.bundleIdentifier, sourceAppName: source?.localizedName)
+                url: url, sourceBundleID: source?.bundleIdentifier, sourceAppName: source?.localizedName,
+                modifiers: held)
             let environment = RoutingEnvironment(
                 installedBrowserIDs: Set(browsers.installed.map(\.id)),
                 installedProfiles: browsers.profiles.mapValues { Set($0.map(\.id)) },
@@ -44,8 +78,10 @@ final class LinkRouter {
             let decision = Router.decide(context, settings: current, environment: environment)
 
             // Already open somewhere? Go there instead of opening a duplicate. Desktop apps still win,
-            // and holding ⌥ skips this so the picker always appears.
+            // the picker key skips this so the picker always appears, and so does a rule that asks
+            // for held keys: holding them says where you want the link.
             if current.tabReuse == .anyBrowser, !forcePicker, !decision.isApp,
+               !Self.ruleUsesKeys(decision, in: current.rules),
                let tab = OpenTabFinder.find(url, in: tabSearchOrder(decision)), OpenTabFinder.focus(tab) {
                 continue
             }
@@ -67,6 +103,11 @@ final class LinkRouter {
                 picker.enqueue(PickerRequest(url: url, sourceApp: source))
             }
         }
+    }
+
+    private static func ruleUsesKeys(_ decision: RoutingDecision, in rules: [Rule]) -> Bool {
+        guard case .open(_, let ruleID?) = decision, let rule = rules.first(where: { $0.id == ruleID }) else { return false }
+        return rule.conditions.contains { $0.field == .modifiers }
     }
 
     /// The browser the link would open in first, then the one used last, then any other running one.

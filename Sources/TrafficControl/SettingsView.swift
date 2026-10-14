@@ -228,8 +228,19 @@ struct GeneralSettingsView: View {
                     Text("See where a link goes before choosing a browser")
                 }
                 Toggle(isOn: $model.settings.forcePickerWithOption) {
-                    Text("Hold ⌥ Option to always show the picker")
-                    Text("Choose a browser by hand, even when a rule or app matches the link")
+                    Text("Hold a key while clicking a link to always show the picker")
+                    Text("Skips rules, desktop apps and open tabs so you can choose by hand")
+                }
+                if model.settings.forcePickerWithOption {
+                    Picker(selection: $model.settings.pickerModifier) {
+                        // No ⌃ Control: Control-click is a right-click on macOS.
+                        ForEach([ModifierKey.option, .shift, .command], id: \.self) { key in
+                            Text("\(key.symbol) \(key.name)").tag(key)
+                        }
+                    } label: {
+                        Text("Key")
+                        Text("Some apps use ⌥-click themselves (Slack marks the message unread), so pick another key if it does nothing there")
+                    }
                 }
             }
 
@@ -886,8 +897,12 @@ private struct RuleEditor: View {
                         }
                         .labelsHidden()
                         .frame(width: 150)
-                        TextField("", text: $condition.value, prompt: Text(condition.field.placeholder))
-                            .labelsHidden()
+                        if condition.field == .modifiers {
+                            KeyToggles(value: $condition.value)
+                        } else {
+                            TextField("", text: $condition.value, prompt: Text(condition.field.placeholder))
+                                .labelsHidden()
+                        }
                         Button {
                             rule.conditions.removeAll { $0.id == condition.id }
                         } label: {
@@ -900,6 +915,10 @@ private struct RuleEditor: View {
                     }
                 }
                 Button("Add Condition") { rule.conditions.append(Condition()) }
+                if let clash = pickerKeyClash {
+                    Text("Holding \(clash.symbol) \(clash.name) shows the picker instead (Settings → General), so this rule never runs with it held. Pick another key here or there.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
             }
 
             Section("Then") {
@@ -918,8 +937,41 @@ private struct RuleEditor: View {
         .formStyle(.grouped)
     }
 
+    /// The picker key, if this rule needs it held: the picker would always win.
+    private var pickerKeyClash: ModifierKey? {
+        guard model.settings.forcePickerWithOption else { return nil }
+        let key = model.settings.pickerModifier
+        let needsKey = rule.conditions.contains { $0.field == .modifiers && ModifierKey.parse($0.value).contains(key) }
+        return needsKey ? key : nil
+    }
+
     private func isListed(_ browserID: String, _ profileID: String?) -> Bool {
         let target = BrowserTarget(browserID: browserID, profileID: profileID)
         return browsers.menuChoices(model.settings).contains { $0.target == target }
+    }
+}
+
+/// ⌃ ⌥ ⇧ ⌘ buttons that edit a Keys held condition's value ("⌥⌘").
+private struct KeyToggles: View {
+    @Binding var value: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(ModifierKey.allCases, id: \.self) { key in
+                Toggle(isOn: Binding(
+                    get: { ModifierKey.parse(value).contains(key) },
+                    set: { on in
+                        var keys = ModifierKey.parse(value)
+                        if on { keys.insert(key) } else { keys.remove(key) }
+                        value = ModifierKey.symbols(keys)
+                    })
+                ) {
+                    Text(key.symbol).font(.system(size: 13, weight: .medium)).frame(minWidth: 18)
+                }
+                .toggleStyle(.button)
+                .help(key.name)
+            }
+            Spacer(minLength: 0)
+        }
     }
 }

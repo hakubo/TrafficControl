@@ -31,7 +31,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var appLinkModes: [String: AppLinkMode] = [:]
     public var showURLInPicker = true
     public var showMenuBarIcon = true
+    /// Holding `pickerModifier` while clicking a link skips everything and shows the picker.
     public var forcePickerWithOption = true
+    public var pickerModifier = ModifierKey.option
     public var rememberDomains = true
     public var tabReuse = TabReuseMode.anyBrowser
 
@@ -45,7 +47,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case defaultBehavior, primaryBrowser, browserOrder, choiceOrder, hiddenBrowserIDs, hiddenProfiles, rules, appLinkModes
-        case showURLInPicker, showMenuBarIcon, forcePickerWithOption, rememberDomains, tabReuse
+        case showURLInPicker, showMenuBarIcon, forcePickerWithOption, pickerModifier, rememberDomains, tabReuse
     }
 
     // Every key is optional so settings files written by older versions keep loading.
@@ -63,6 +65,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showURLInPicker = try c.decodeIfPresent(Bool.self, forKey: .showURLInPicker) ?? d.showURLInPicker
         showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? d.showMenuBarIcon
         forcePickerWithOption = try c.decodeIfPresent(Bool.self, forKey: .forcePickerWithOption) ?? d.forcePickerWithOption
+        pickerModifier = try c.decodeIfPresent(ModifierKey.self, forKey: .pickerModifier) ?? d.pickerModifier
         rememberDomains = try c.decodeIfPresent(Bool.self, forKey: .rememberDomains) ?? d.rememberDomains
         tabReuse = try c.decodeIfPresent(TabReuseMode.self, forKey: .tabReuse) ?? d.tabReuse
     }

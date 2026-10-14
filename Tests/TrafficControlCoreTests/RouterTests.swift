@@ -434,3 +434,54 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         #expect(h.records["a.com"]?.paths.isEmpty == true)
     }
 }
+
+@Suite struct ModifierKeyTests {
+    private func clicked(_ url: String, holding keys: Set<ModifierKey>) -> LinkContext {
+        LinkContext(url: URL(string: url)!, modifiers: keys)
+    }
+
+    @Test func includeMatchesWhenAllNamedKeysAreHeld() {
+        let c = Condition(field: .modifiers, op: .includeKeys, value: "⌘")
+        #expect(c.matches(clicked("https://a.com", holding: [.command])))
+        #expect(c.matches(clicked("https://a.com", holding: [.command, .shift])))
+        #expect(!c.matches(clicked("https://a.com", holding: [.shift])))
+        #expect(!c.matches(clicked("https://a.com", holding: [])))
+    }
+
+    @Test func exactlyRejectsExtraKeys() {
+        let c = Condition(field: .modifiers, op: .exactKeys, value: "⌥⇧")
+        #expect(c.matches(clicked("https://a.com", holding: [.option, .shift])))
+        #expect(!c.matches(clicked("https://a.com", holding: [.option, .shift, .command])))
+    }
+
+    @Test func noKeysChosenNeverMatches() {
+        #expect(!Condition(field: .modifiers, op: .includeKeys, value: "").matches(clicked("https://a.com", holding: [.command])))
+    }
+
+    @Test func symbolsRoundTripInMacOrder() {
+        #expect(ModifierKey.symbols([.command, .control, .shift]) == "⌃⇧⌘")
+        #expect(ModifierKey.parse("⌘x⌥") == [.command, .option])
+    }
+
+    @Test func keyRuleRoutesCommandClicksElsewhere() {
+        var s = AppSettings()
+        s.rules = [
+            Rule(conditions: [Condition(field: .modifiers, op: .includeKeys, value: "⌘")], action: .open(browserID: safari)),
+            Rule.forAddress("github.com", to: BrowserTarget(browserID: chrome)),
+        ]
+        let env = RoutingEnvironment(installedBrowserIDs: installed)
+        #expect(Router.decide(clicked("https://github.com/x", holding: [.command]), settings: s, environment: env)
+                == .open(BrowserTarget(browserID: safari), ruleID: s.rules[0].id))
+        #expect(Router.decide(clicked("https://github.com/x", holding: []), settings: s, environment: env)
+                == .open(BrowserTarget(browserID: chrome), ruleID: s.rules[1].id))
+    }
+
+    @Test func pickerKeyDefaultsToOptionAndLoadsFromOlderSettings() throws {
+        #expect(AppSettings().pickerModifier == .option)
+        let old = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"forcePickerWithOption": false}"#.utf8))
+        #expect(old.forcePickerWithOption == false)
+        #expect(old.pickerModifier == .option)
+        let shift = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"pickerModifier": "shift"}"#.utf8))
+        #expect(shift.pickerModifier == .shift)
+    }
+}
