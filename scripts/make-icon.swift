@@ -14,7 +14,7 @@ func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> NSColor {
 }
 
 /// Drawn on a 1024 grid (y up); the body follows the macOS icon template (824pt square, 100pt margin).
-/// An air traffic control tower at dusk, its beacon sending out signals.
+/// A control tower on a radar scope: flat white tower, amber-lit cab, sweep and range rings behind it.
 func drawIcon(in ctx: CGContext) {
     let space = CGColorSpace(name: CGColorSpace.sRGB)
     func gradient(_ colors: [NSColor], _ locations: [CGFloat]) -> CGGradient {
@@ -26,14 +26,25 @@ func drawIcon(in ctx: CGContext) {
         path.closeSubpath()
         return path
     }
+    /// Fills a polygon with softly rounded corners by stroking it in the same paint.
+    func fillRounded(_ path: CGPath, radius: CGFloat, _ paint: () -> Void) {
+        let rounded = path.copy(strokingWithWidth: radius * 2, lineCap: .round, lineJoin: .round, miterLimit: 1)
+        for shape in [path, rounded] {
+            ctx.saveGState()
+            ctx.addPath(shape)
+            ctx.clip()
+            paint()
+            ctx.restoreGState()
+        }
+    }
 
     let body = CGRect(x: 100, y: 100, width: 824, height: 824)
     let bodyPath = CGPath(roundedRect: body, cornerWidth: 185, cornerHeight: 185, transform: nil)
 
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 24, color: color(0x000000, 0.35).cgColor)
+    ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: color(0x000000, 0.4).cgColor)
     ctx.addPath(bodyPath)
-    ctx.setFillColor(color(0x1B2A4A).cgColor)
+    ctx.setFillColor(color(0x0E1A33).cgColor)
     ctx.fillPath()
     ctx.restoreGState()
 
@@ -41,102 +52,106 @@ func drawIcon(in ctx: CGContext) {
     ctx.addPath(bodyPath)
     ctx.clip()
 
-    // Dusk sky: deep blue overhead fading to a warm horizon.
+    // Scope background.
     ctx.drawLinearGradient(
-        gradient([color(0x16264A), color(0x2D4D86), color(0xF0925A)], [0, 0.55, 1]),
-        start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 230), options: [.drawsAfterEndLocation])
-    for (x, y, r) in [(220.0, 820.0, 5.0), (300, 700, 3.5), (760, 840, 4.5), (840, 720, 3.5), (690, 900, 3), (180, 640, 3)] {
-        ctx.setFillColor(color(0xFFFFFF, 0.8).cgColor)
-        ctx.fillEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
+        gradient([color(0x22386A), color(0x0B1428)], [0, 1]),
+        start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 100), options: [])
+
+    // Radar centred on the cab: range rings, then a sweep fading behind its leading edge.
+    let center = CGPoint(x: 512, y: 640)
+    ctx.setLineWidth(5)
+    for radius in stride(from: 130.0, through: 560, by: 130) {
+        ctx.setStrokeColor(color(0xFFFFFF, 0.07).cgColor)
+        ctx.strokeEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
     }
-
-    // Ground.
-    ctx.setFillColor(color(0x0E1628).cgColor)
-    ctx.fill(CGRect(x: 100, y: 100, width: 824, height: 132))
-
-    // Signal waves either side of the beacon.
-    let beacon = CGPoint(x: 512, y: 868)
+    let lead = CGFloat.pi * 0.28
+    let span = CGFloat.pi * 0.42
+    let slices = 60
+    for i in 0..<slices {
+        let t = CGFloat(i) / CGFloat(slices)
+        let a0 = lead - span * (1 - t)
+        let a1 = lead - span * (1 - t - 1 / CGFloat(slices)) + 0.012
+        ctx.move(to: center)
+        ctx.addArc(center: center, radius: 620, startAngle: a0, endAngle: a1, clockwise: false)
+        ctx.closePath()
+        ctx.setFillColor(color(0xFFB547, 0.5 * pow(t, 1.6)).cgColor)
+        ctx.fillPath()
+    }
+    ctx.setStrokeColor(color(0xFFC86B, 0.9).cgColor)
+    ctx.setLineWidth(7)
     ctx.setLineCap(.round)
-    for (radius, alpha) in [(70.0, 0.75), (120.0, 0.45), (170.0, 0.22)] {
-        ctx.setStrokeColor(color(0x9BE7FF, alpha).cgColor)
-        ctx.setLineWidth(16)
-        for (start, end) in [(-0.45, 0.45), (Double.pi - 0.45, Double.pi + 0.45)] {
-            ctx.addArc(center: beacon, radius: radius, startAngle: start, endAngle: end, clockwise: false)
-            ctx.strokePath()
-        }
+    ctx.move(to: center)
+    ctx.addLine(to: CGPoint(x: center.x + cos(lead) * 620, y: center.y + sin(lead) * 620))
+    ctx.strokePath()
+
+    // Blips the sweep just passed.
+    for (x, y, r, a) in [(742.0, 790.0, 13.0, 0.95), (668, 862, 9, 0.6), (812, 700, 9, 0.75)] {
+        ctx.saveGState()
+        ctx.setShadow(offset: .zero, blur: 18, color: color(0xFFC86B, 0.9).cgColor)
+        ctx.setFillColor(color(0xFFD48A, a).cgColor)
+        ctx.fillEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
+        ctx.restoreGState()
     }
 
-    // Shaft, lit from the left.
-    let shaft = polygon([CGPoint(x: 418, y: 200), CGPoint(x: 606, y: 200), CGPoint(x: 572, y: 560), CGPoint(x: 452, y: 560)])
+    // Tower: one white silhouette with a soft vertical shade.
+    let white = { ctx.drawLinearGradient(
+        gradient([color(0xFFFFFF), color(0xD5DDEA)], [0, 1]),
+        start: CGPoint(x: 512, y: 760), end: CGPoint(x: 512, y: 100), options: [.drawsAfterEndLocation, .drawsBeforeStartLocation]) }
+
     ctx.saveGState()
-    ctx.addPath(shaft)
-    ctx.clip()
-    ctx.drawLinearGradient(
-        gradient([color(0xEEF2F8), color(0xB4C0D6)], [0, 1]),
-        start: CGPoint(x: 418, y: 0), end: CGPoint(x: 606, y: 0), options: [])
+    ctx.setShadow(offset: CGSize(width: 0, height: -16), blur: 36, color: color(0x000000, 0.45).cgColor)
+    ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+    fillRounded(polygon([CGPoint(x: 432, y: 60), CGPoint(x: 592, y: 60), CGPoint(x: 560, y: 560), CGPoint(x: 464, y: 560)]), radius: 6, white)
+    fillRounded(polygon([CGPoint(x: 388, y: 548), CGPoint(x: 636, y: 548), CGPoint(x: 636, y: 588), CGPoint(x: 388, y: 588)]), radius: 14, white)
+    fillRounded(polygon([CGPoint(x: 336, y: 708), CGPoint(x: 688, y: 708), CGPoint(x: 688, y: 752), CGPoint(x: 336, y: 752)]), radius: 16, white)
+    fillRounded(polygon([CGPoint(x: 468, y: 748), CGPoint(x: 556, y: 748), CGPoint(x: 546, y: 790), CGPoint(x: 478, y: 790)]), radius: 6, white)
+    ctx.endTransparencyLayer()
     ctx.restoreGState()
-    ctx.setFillColor(color(0x5B6B8C, 0.55).cgColor)
-    for y in stride(from: 270.0, through: 500, by: 70) {
-        ctx.fill(CGRect(x: 498, y: y, width: 28, height: 34))
-    }
 
-    // Base.
-    ctx.setFillColor(color(0xC9D3E5).cgColor)
-    ctx.addPath(CGPath(roundedRect: CGRect(x: 360, y: 200, width: 304, height: 40), cornerWidth: 10, cornerHeight: 10, transform: nil))
-    ctx.fillPath()
-
-    // Balcony under the cab.
-    ctx.setFillColor(color(0xE6ECF5).cgColor)
-    ctx.addPath(CGPath(roundedRect: CGRect(x: 384, y: 556, width: 256, height: 40), cornerWidth: 10, cornerHeight: 10, transform: nil))
-    ctx.fillPath()
-
-    // Glass cab, wider at the top, glowing from inside.
-    let cab = polygon([CGPoint(x: 392, y: 596), CGPoint(x: 632, y: 596), CGPoint(x: 682, y: 748), CGPoint(x: 342, y: 748)])
+    // Lit cab glass between balcony and roof.
+    let cab = polygon([CGPoint(x: 402, y: 588), CGPoint(x: 622, y: 588), CGPoint(x: 668, y: 708), CGPoint(x: 356, y: 708)])
     ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: 50, color: color(0x6FE0FF, 0.55).cgColor)
-    ctx.addPath(cab)
-    ctx.setFillColor(color(0x3FB6E6).cgColor)
-    ctx.fillPath()
+    ctx.setShadow(offset: .zero, blur: 60, color: color(0xFFB547, 0.7).cgColor)
+    fillRounded(cab, radius: 4) {
+        ctx.drawLinearGradient(
+            gradient([color(0xFFD27A), color(0xF08A24)], [0, 1]),
+            start: CGPoint(x: 512, y: 708), end: CGPoint(x: 512, y: 588), options: [])
+    }
     ctx.restoreGState()
     ctx.saveGState()
     ctx.addPath(cab)
     ctx.clip()
-    ctx.drawLinearGradient(
-        gradient([color(0xA8F0FF), color(0x2A9FD8)], [0, 1]),
-        start: CGPoint(x: 512, y: 748), end: CGPoint(x: 512, y: 596), options: [])
-    // Window frames.
-    ctx.setStrokeColor(color(0x123056, 0.85).cgColor)
-    ctx.setLineWidth(12)
-    for (bottomX, topX) in [(452.0, 427.0), (512, 512), (572, 597)] {
-        ctx.move(to: CGPoint(x: bottomX, y: 596))
-        ctx.addLine(to: CGPoint(x: topX, y: 748))
+    ctx.setStrokeColor(color(0x0E1A33, 0.55).cgColor)
+    ctx.setLineWidth(14)
+    for (bottomX, topX) in [(475.0, 460.0), (549, 564)] {
+        ctx.move(to: CGPoint(x: bottomX, y: 588))
+        ctx.addLine(to: CGPoint(x: topX, y: 708))
         ctx.strokePath()
     }
     ctx.restoreGState()
 
-    // Roof, cap and antenna.
-    ctx.setFillColor(color(0xE6ECF5).cgColor)
-    ctx.addPath(CGPath(roundedRect: CGRect(x: 326, y: 744, width: 372, height: 44), cornerWidth: 14, cornerHeight: 14, transform: nil))
-    ctx.fillPath()
-    ctx.setFillColor(color(0xC9D3E5).cgColor)
-    ctx.addPath(CGPath(roundedRect: CGRect(x: 452, y: 786, width: 120, height: 26), cornerWidth: 8, cornerHeight: 8, transform: nil))
-    ctx.fillPath()
-    ctx.setStrokeColor(color(0xC9D3E5).cgColor)
+    // Antenna and beacon.
+    ctx.setStrokeColor(color(0xE6ECF5).cgColor)
     ctx.setLineWidth(12)
-    ctx.move(to: CGPoint(x: 512, y: 810))
-    ctx.addLine(to: CGPoint(x: 512, y: beacon.y))
+    ctx.setLineCap(.round)
+    ctx.move(to: CGPoint(x: 512, y: 788))
+    ctx.addLine(to: CGPoint(x: 512, y: 846))
     ctx.strokePath()
-
-    // Red beacon.
     ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: 40, color: color(0xFF453A, 0.95).cgColor)
-    ctx.setFillColor(color(0xFF453A).cgColor)
-    ctx.fillEllipse(in: CGRect(x: beacon.x - 24, y: beacon.y - 24, width: 48, height: 48))
+    ctx.setShadow(offset: .zero, blur: 30, color: color(0xFF5A4E, 0.95).cgColor)
+    ctx.setFillColor(color(0xFF5A4E).cgColor)
+    ctx.fillEllipse(in: CGRect(x: 494, y: 840, width: 36, height: 36))
     ctx.restoreGState()
-    ctx.setFillColor(color(0xFFFFFF, 0.7).cgColor)
-    ctx.fillEllipse(in: CGRect(x: beacon.x - 12, y: beacon.y + 2, width: 12, height: 12))
 
+    // Glass highlight along the top edge of the body.
+    ctx.drawLinearGradient(
+        gradient([color(0xFFFFFF, 0.14), color(0xFFFFFF, 0)], [0, 1]),
+        start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 760), options: [])
     ctx.restoreGState()
+    ctx.addPath(bodyPath)
+    ctx.setStrokeColor(color(0xFFFFFF, 0.12).cgColor)
+    ctx.setLineWidth(3)
+    ctx.strokePath()
 }
 
 func png(size: Int) -> Data {

@@ -2,222 +2,555 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>TrafficControl</title>
-  <meta name="description" content="A free macOS app that sends every link you click to the right browser, profile or app.">
+  <meta name="description" content="A free macOS app that sends every link you click to the right browser, Chrome profile or desktop app.">
   <meta property="og:title" content="TrafficControl">
-  <meta property="og:description" content="Send every link you click to the right browser, profile or app.">
-  <meta property="og:image" content="icon.png">
+  <meta property="og:description" content="Every link, cleared for the right browser.">
+  <meta property="og:image" content="https://hakubo.github.io/TrafficControl/icon.png">
   <link rel="icon" href="icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
   <style>
+    /* Layout: a control-room board. Hero splits the pitch from a live radar scope with its strip bay;
+       below, the routing sequence, the feature board, install and privacy. */
     :root {
-      --bg: #f6f7fb;
-      --surface: #ffffff;
-      --text: #141a29;
-      --muted: #5b6478;
-      --border: #e2e5ee;
-      --accent: #1f9d55;
-      --accent-text: #ffffff;
-      --hero-a: #24365e;
-      --hero-b: #101828;
-      --code-bg: #eef0f6;
+      --paper: #edf1f6;
+      --panel: #ffffff;
+      --ink: #0e1a33;
+      --ink-soft: #4a5672;
+      --rule: #d2d9e4;
+      --amber: #f5a524;
+      --amber-ink: #a95b06;
+      --on-amber: #1a1204;
+      --strip: #f7edd6;
+      --strip-edge: #e0cfa8;
+      --scope: #0b1428;
+      --scope-ring: #22355c;
+      --scope-text: #c9d6ee;
+      --display: "Big Shoulders Display", "Arial Narrow", "Helvetica Neue", sans-serif;
+      --body: "Atkinson Hyperlegible", -apple-system, "Segoe UI", sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+      color-scheme: light;
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
-        --bg: #0d121c;
-        --surface: #151c2b;
-        --text: #e8ecf5;
-        --muted: #9aa4ba;
-        --border: #263047;
-        --accent: #32d74b;
-        --accent-text: #08210f;
-        --code-bg: #1d2537;
+        --paper: #08101f;
+        --panel: #0f1a30;
+        --ink: #e8eef7;
+        --ink-soft: #9ba8c0;
+        --rule: #1f2e4b;
+        --amber: #ffb547;
+        --amber-ink: #ffc46e;
+        --on-amber: #1a1204;
+        --strip: #1d1a14;
+        --strip-edge: #3a3122;
+        --scope: #050b18;
+        --scope-ring: #1c2d4f;
+        --scope-text: #c9d6ee;
+        color-scheme: dark;
       }
     }
     :root[data-theme="dark"] {
-      --bg: #0d121c;
-      --surface: #151c2b;
-      --text: #e8ecf5;
-      --muted: #9aa4ba;
-      --border: #263047;
-      --accent: #32d74b;
-      --accent-text: #08210f;
-      --code-bg: #1d2537;
+      --paper: #08101f;
+      --panel: #0f1a30;
+      --ink: #e8eef7;
+      --ink-soft: #9ba8c0;
+      --rule: #1f2e4b;
+      --amber: #ffb547;
+      --amber-ink: #ffc46e;
+      --on-amber: #1a1204;
+      --strip: #1d1a14;
+      --strip-edge: #3a3122;
+      --scope: #050b18;
+      --scope-ring: #1c2d4f;
+      --scope-text: #c9d6ee;
+      color-scheme: dark;
     }
 
     * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
     body {
       margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      font: 17px/1.6 var(--body);
       -webkit-font-smoothing: antialiased;
     }
-    a { color: inherit; }
-    .wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
-
-    header.hero {
-      background: linear-gradient(180deg, var(--hero-a), var(--hero-b));
-      color: #fff;
-      text-align: center;
-      padding: 72px 0 64px;
+    a { color: inherit; text-underline-offset: 3px; }
+    a:focus-visible, button:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; border-radius: 6px; }
+    .wrap {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding-left: max(20px, env(safe-area-inset-left, 0px));
+      padding-right: max(20px, env(safe-area-inset-right, 0px));
     }
-    .hero img { width: 128px; height: 128px; }
-    .hero h1 { font-size: clamp(36px, 7vw, 56px); letter-spacing: -0.02em; margin: 12px 0 8px; }
-    .hero p.lede { font-size: clamp(17px, 2.6vw, 21px); color: #c9d3ea; max-width: 620px; margin: 0 auto 32px; }
+    .label {
+      font: 500 12px/1.4 var(--mono);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+    }
+    h1, h2, h3 { text-wrap: balance; margin: 0; }
+    h2 {
+      font: 800 clamp(34px, 5vw, 52px)/0.95 var(--display);
+      text-transform: uppercase;
+      letter-spacing: 0.01em;
+    }
+
+    /* Top bar */
+    .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 20px; }
+    .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font: 800 22px/1 var(--display); text-transform: uppercase; letter-spacing: 0.02em; }
+    .brand img { width: 34px; height: 34px; }
+    .bar nav { display: flex; gap: 20px; font-size: 15px; }
+    .bar nav a { text-decoration: none; color: var(--ink-soft); }
+    .bar nav a:hover { color: var(--ink); }
+
+    /* Hero */
+    .hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 56px; align-items: center; padding-block: 40px 72px; }
+    .hero-copy { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+    .hero h1 {
+      font: 800 clamp(52px, 7.2vw, 92px)/0.9 var(--display);
+      text-transform: uppercase;
+      letter-spacing: 0.005em;
+    }
+    .hero h1 em { font-style: normal; color: var(--amber-ink); }
+    .lede { font-size: 20px; color: var(--ink-soft); max-width: 34ch; margin: 0; }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; }
     .download {
       display: inline-flex; align-items: center; gap: 10px;
-      background: var(--accent); color: var(--accent-text);
-      font-weight: 600; font-size: 18px; text-decoration: none;
-      padding: 14px 28px; border-radius: 12px;
-      box-shadow: 0 8px 24px rgba(50, 215, 75, 0.25);
+      background: var(--amber); color: var(--on-amber);
+      font: 700 18px/1 var(--body); text-decoration: none;
+      padding: 16px 26px; border-radius: 10px;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.4) inset, 0 10px 30px -8px rgba(245, 165, 36, 0.55);
+      transition: transform 0.15s ease;
     }
-    .download:hover { filter: brightness(1.08); }
-    .download svg { width: 20px; height: 20px; }
-    .meta { margin-top: 14px; font-size: 14px; color: #9fb0d4; }
-    .meta a { color: #c9d3ea; }
+    .download:hover { transform: translateY(-1px); }
+    .download svg { width: 18px; height: 18px; }
+    .meta { font: 400 13px/1.5 var(--mono); color: var(--ink-soft); }
+    .meta a { color: var(--ink); }
 
-    section { padding: 64px 0 8px; }
-    h2 { font-size: 28px; letter-spacing: -0.01em; margin: 0 0 24px; }
+    /* Radar scope */
+    .scope {
+      background: var(--scope);
+      border-radius: 22px;
+      padding: 18px;
+      display: flex; flex-direction: column; gap: 14px;
+      box-shadow: 0 30px 60px -30px rgba(8, 16, 31, 0.6);
+      min-width: 0;
+    }
+    .scope-head { display: flex; justify-content: space-between; gap: 12px; font: 500 11px/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--scope-text); opacity: 0.75; }
+    .scope canvas { width: 100%; aspect-ratio: 1.6; max-width: 100%; display: block; }
+    .strips { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .strip {
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr) auto auto;
+      align-items: center;
+      background: var(--strip);
+      border: 1px solid var(--strip-edge);
+      border-left: 6px solid var(--tag);
+      border-radius: 4px;
+      font: 400 13px/1.3 var(--mono);
+      color: var(--ink);
+      min-height: 40px;
+    }
+    .strip > * { padding: 8px 10px; min-width: 0; }
+    .strip .call { font-weight: 500; border-right: 1px solid var(--strip-edge); letter-spacing: 0.04em; }
+    .strip .route { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .strip .route b { font-weight: 500; }
+    .strip .route span { color: var(--ink-soft); }
+    .strip .dest { font-weight: 500; white-space: nowrap; padding-right: 2px; }
+    .strip .via { font-size: 11px; letter-spacing: 0.1em; font-weight: 500; color: var(--tag-ink); white-space: nowrap; }
+    .strip[data-via="app"] { --tag: #8b6cf0; --tag-ink: #7457d6; }
+    .strip[data-via="tab"] { --tag: #e5534b; --tag-ink: #c2413a; }
+    .strip[data-via="rule"] { --tag: #2f9e6a; --tag-ink: #237c52; }
+    .strip[data-via="ask"] { --tag: var(--amber); --tag-ink: var(--amber-ink); }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .strip[data-via="app"] { --tag-ink: #b3a0ff; }
+      :root:not([data-theme="light"]) .strip[data-via="tab"] { --tag-ink: #ff8c85; }
+      :root:not([data-theme="light"]) .strip[data-via="rule"] { --tag-ink: #6fd3a0; }
+    }
+    :root[data-theme="dark"] .strip[data-via="app"] { --tag-ink: #b3a0ff; }
+    :root[data-theme="dark"] .strip[data-via="tab"] { --tag-ink: #ff8c85; }
+    :root[data-theme="dark"] .strip[data-via="rule"] { --tag-ink: #6fd3a0; }
 
-    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-    .card {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px;
-    }
-    .card h3 { margin: 0 0 6px; font-size: 17px; display: flex; align-items: center; gap: 8px; }
-    .card p { margin: 0; color: var(--muted); font-size: 15px; }
-    .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+    /* Choosy note */
+    .choosy { border-block: 1px solid var(--rule); }
+    .choosy .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 32px; padding-block: 26px; }
+    .choosy p { margin: 0; max-width: 70ch; color: var(--ink-soft); }
+    .choosy p strong { color: var(--ink); }
+    .choosy a.out { font-weight: 700; white-space: nowrap; }
 
-    ol.steps { padding-left: 22px; margin: 0; }
-    ol.steps li { margin-bottom: 12px; }
-    .note {
-      background: var(--surface); border: 1px solid var(--border); border-left: 4px solid #ffb340;
-      border-radius: 10px; padding: 14px 16px; margin-top: 20px; color: var(--muted); font-size: 15px;
+    section.block { padding-block: 88px 8px; }
+    .block-head { display: flex; flex-direction: column; gap: 12px; margin-bottom: 36px; max-width: 720px; }
+    .block-head p { margin: 0; color: var(--ink-soft); }
+
+    /* Routing sequence: the order is how the app actually decides. */
+    .sequence { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; counter-reset: step; }
+    .sequence li { position: relative; padding: 18px 18px 0 0; border-top: 3px solid var(--ink); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .sequence li:last-child { border-top-color: var(--amber); }
+    .sequence li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute; top: -14px; left: 0;
+      width: 26px; height: 26px; border-radius: 50%;
+      display: grid; place-items: center;
+      background: var(--paper); border: 3px solid var(--ink);
+      font: 500 12px/1 var(--mono);
     }
-    .note strong { color: var(--text); }
-    code {
-      font: 13.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
-      background: var(--code-bg); padding: 2px 6px; border-radius: 6px; word-break: break-all;
-    }
+    .sequence li:last-child::before { border-color: var(--amber); }
+    .sequence h3 { font: 700 18px/1.25 var(--body); padding-top: 8px; }
+    .sequence p { margin: 0; font-size: 15px; color: var(--ink-soft); }
+    .hold { margin-top: 28px; font: 400 14px/1.5 var(--mono); color: var(--ink-soft); }
+
+    /* Feature board */
+    .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px 48px; }
+    .feature { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 18px; border-top: 1px solid var(--rule); }
+    .feature h3 { font: 700 20px/1.25 var(--body); }
+    .feature p { margin: 0; color: var(--ink-soft); font-size: 16px; }
+    .feature .label { color: var(--amber-ink); }
     kbd {
-      font: 13px ui-monospace, "SF Mono", Menlo, monospace;
-      border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px;
-      background: var(--surface);
+      font: 500 13px/1 var(--mono);
+      border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 5px;
+      padding: 2px 5px; background: var(--panel); color: var(--ink);
     }
 
-    .choosy {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px;
+    /* Install */
+    .install { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+    .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; counter-reset: step; }
+    .steps li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; }
+    .steps li::before {
+      counter-increment: step; content: counter(step);
+      font: 800 30px/1 var(--display); color: var(--amber-ink);
     }
-    .choosy h2 { font-size: 22px; margin-bottom: 8px; }
-    .choosy p { margin: 0; color: var(--muted); }
-    .choosy a { color: var(--text); font-weight: 600; }
+    .gate { background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .gate h3 { font: 700 18px/1.3 var(--body); }
+    .gate p { margin: 0; color: var(--ink-soft); font-size: 15px; }
+    .cmd { display: flex; align-items: stretch; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--paper); }
+    .cmd code { flex: 1; min-width: 0; padding: 10px 12px; font: 400 13px/1.5 var(--mono); overflow-x: auto; white-space: nowrap; }
+    .cmd button {
+      border: 0; border-left: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+      font: 500 13px/1 var(--body); padding: 0 14px; cursor: pointer;
+    }
+    .cmd button:hover { color: var(--amber-ink); }
 
-    footer { padding: 56px 0 40px; color: var(--muted); font-size: 14px; text-align: center; }
+    .privacy p { margin: 0; max-width: 68ch; color: var(--ink-soft); }
+    .privacy code { font: 400 14px/1.5 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+
+    footer { margin-top: 96px; border-top: 1px solid var(--rule); }
+    footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; padding-block: 28px 40px; font-size: 14px; color: var(--ink-soft); }
+
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: minmax(0, 1fr); gap: 36px; padding-top: 16px; }
+      .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .sequence { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+      .sequence li { border-top: 0; border-left: 3px solid var(--ink); padding: 0 0 0 26px; }
+      .sequence li:last-child { border-left-color: var(--amber); }
+      .sequence li::before { top: -2px; left: -15px; }
+      .sequence h3 { padding-top: 0; }
+      .install { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 560px) {
+      body { font-size: 16px; }
+      .board { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+      .bar nav a.hide-sm { display: none; }
+      .strip { grid-template-columns: 46px minmax(0, 1fr) auto; }
+      .strip .route { grid-column: 2 / 4; padding-bottom: 0; }
+      .strip .dest { grid-column: 2; padding-top: 2px; }
+      .strip .via { grid-column: 3; padding-top: 2px; }
+      section.block { padding-top: 64px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .download { transition: none; }
+    }
   </style>
 </head>
 <body>
-  <header class="hero">
-    <div class="wrap">
-      <img src="icon.png" alt="" width="128" height="128">
-      <h1>TrafficControl</h1>
-      <p class="lede">Every link you click goes to the right browser, Chrome profile or app. Set rules once, or pick on the spot.</p>
-      <a class="download" id="download" href="https://github.com/hakubo/TrafficControl/releases/latest/download/TrafficControl.dmg">
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10M5.5 8.5 10 13l4.5-4.5M4 17h12"/></svg>
-        Download for Mac
-      </a>
-      <div class="meta">
-        <span id="version">Free and open source</span> · macOS 14+ · Apple Silicon &amp; Intel ·
-        <a href="https://github.com/hakubo/TrafficControl">GitHub</a>
-      </div>
-    </div>
+  <header class="wrap bar">
+    <a class="brand" href="./"><img src="icon.png" alt="" width="34" height="34">TrafficControl</a>
+    <nav>
+      <a class="hide-sm" href="#routing">How it works</a>
+      <a class="hide-sm" href="#install">Install</a>
+      <a href="https://github.com/hakubo/TrafficControl">GitHub</a>
+    </nav>
   </header>
 
-  <main class="wrap">
-    <section>
-      <h2>What it does</h2>
-      <div class="features">
-        <div class="card">
-          <h3><span class="dot" style="background:#32d74b"></span>A picker at your cursor</h3>
-          <p>Click a link and choose where it opens. Press <kbd>1</kbd>–<kbd>9</kbd> or a browser's first letter, <kbd>⇧</kbd> to open in the background, <kbd>⌘C</kbd> to copy.</p>
-        </div>
-        <div class="card">
-          <h3><span class="dot" style="background:#0a84ff"></span>Chrome profiles</h3>
-          <p>Each profile gets its own entry, with your account picture. Work links go to the work profile. Also works with Brave, Edge, Vivaldi and Chromium.</p>
-        </div>
-        <div class="card">
-          <h3><span class="dot" style="background:#ffb340"></span>Rules</h3>
-          <p>Send links by domain, URL, path or the app you clicked in, with wildcards or regex. Rules can skip the picker or always show it.</p>
-        </div>
-        <div class="card">
-          <h3><span class="dot" style="background:#bf5af2"></span>Desktop apps</h3>
-          <p>Linear, Notion, Zoom and Spotify links open in their apps when they're running, not in another browser tab.</p>
-        </div>
-        <div class="card">
-          <h3><span class="dot" style="background:#ff453a"></span>No duplicate tabs</h3>
-          <p>If the page is already open in Safari or a Chrome-based browser, TrafficControl switches to that tab.</p>
-        </div>
-        <div class="card">
-          <h3><span class="dot" style="background:#64d2ff"></span>Learns your habits</h3>
-          <p>It remembers where each domain's links went, highlights your usual choice, and turns a domain into a rule with one click.</p>
+  <main>
+    <div class="wrap hero">
+      <div class="hero-copy">
+        <span class="label">Link router for macOS</span>
+        <h1>Every link, <em>cleared</em> for the right browser.</h1>
+        <p class="lede">TrafficControl sits between your apps and your browsers. Each link you click goes to the right browser, Chrome profile or desktop app, by rule or by your pick.</p>
+        <div class="actions">
+          <a class="download" href="https://github.com/hakubo/TrafficControl/releases/latest/download/TrafficControl.dmg">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10M5.5 8.5 10 13l4.5-4.5M4 17h12"/></svg>
+            Download for Mac
+          </a>
+          <span class="meta"><span id="version">Free</span> · macOS 14+<br>Apple Silicon &amp; Intel</span>
         </div>
       </div>
-    </section>
 
-    <section>
-      <div class="choosy">
-        <h2>Want something more robust? Use Choosy.</h2>
-        <p>
-          TrafficControl is a small, simple take on an idea that <a href="https://choosy.app">Choosy</a> has done well
-          for years. If you want a more complete and polished tool, with more options and an
-          actively supported app, <a href="https://choosy.app">Choosy</a> is the better choice.
-        </p>
+      <figure class="scope" aria-label="Example: five links and where TrafficControl sends them">
+        <div class="scope-head"><span>Approach · 5 links</span><span id="clock">UTC</span></div>
+        <canvas id="radar" width="640" height="400" aria-hidden="true"></canvas>
+        <ul class="strips">
+          <li class="strip" data-via="app"><span class="call">LNR</span><span class="route"><b>linear.app</b><span>/acme/issue/ENG-142</span></span><span class="dest">→ Linear</span><span class="via">APP</span></li>
+          <li class="strip" data-via="tab"><span class="call">DOC</span><span class="route"><b>docs.google.com</b><span>/document/d/1x…</span></span><span class="dest">→ open tab</span><span class="via">TAB</span></li>
+          <li class="strip" data-via="rule"><span class="call">GHB</span><span class="route"><b>github.com</b><span>/acme/api/pull/88</span></span><span class="dest">→ Chrome · Work</span><span class="via">RULE</span></li>
+          <li class="strip" data-via="ask"><span class="call">HNW</span><span class="route"><b>news.ycombinator.com</b><span>/item?id=4…</span></span><span class="dest">→ your pick</span><span class="via">ASK</span></li>
+        </ul>
+      </figure>
+    </div>
+
+    <aside class="choosy">
+      <div class="wrap">
+        <p><strong>TrafficControl is a simple version of Choosy.</strong> If you want something more robust, with more options and an actively supported app, Choosy is the better choice.</p>
+        <a class="out" href="https://choosy.app">Visit choosy.app →</a>
       </div>
-    </section>
+    </aside>
 
-    <section>
-      <h2>Install</h2>
-      <ol class="steps">
-        <li>Download <strong>TrafficControl.dmg</strong>, open it and drag TrafficControl into <strong>Applications</strong>.</li>
-        <li>Open TrafficControl. It lives in the menu bar, not the Dock.</li>
-        <li>In its Settings, click <strong>Make Default</strong> and confirm the macOS prompt.</li>
+    <section class="block wrap" id="routing">
+      <div class="block-head">
+        <span class="label">How a link is routed</span>
+        <h2>Five checks, in this order</h2>
+        <p>Each click goes down this list and stops at the first step that knows where the link belongs.</p>
+      </div>
+      <ol class="sequence">
+        <li><h3>Desktop app</h3><p>Linear, Notion, Zoom and Spotify links open in their app when it's running.</p></li>
+        <li><h3>Open tab</h3><p>If the page is already open in Safari or a Chrome-based browser, that tab comes to the front.</p></li>
+        <li><h3>Your rules</h3><p>Matched on domain, URL, path or the app you clicked in. The first match wins.</p></li>
+        <li><h3>Default</h3><p>Your primary browser, the only one running, or the one you used last. You decide.</p></li>
+        <li><h3>Picker</h3><p>Anything left appears at your cursor. Your usual choice for the domain is already selected.</p></li>
       </ol>
-      <div class="note" id="gatekeeper">
-        <strong>"Apple could not verify TrafficControl…"</strong> This build isn't notarized by Apple yet, so macOS
-        blocks the first launch. After trying to open it once, go to <strong>System Settings → Privacy &amp; Security</strong>
-        and click <strong>Open Anyway</strong>. Or run this in Terminal:<br>
-        <code>xattr -dr com.apple.quarantine /Applications/TrafficControl.app</code>
+      <p class="hold">Hold <kbd>⌥</kbd> while clicking to go straight to the picker.</p>
+    </section>
+
+    <section class="block wrap">
+      <div class="block-head">
+        <span class="label">What it handles</span>
+        <h2>Built for people with too many browsers</h2>
+      </div>
+      <div class="board">
+        <div class="feature">
+          <span class="label">Picker</span>
+          <h3>Choose at the cursor</h3>
+          <p><kbd>1</kbd>–<kbd>9</kbd> or a browser's first letter opens it. <kbd>⇧</kbd> opens in the background, <kbd>⌘C</kbd> copies the link.</p>
+        </div>
+        <div class="feature">
+          <span class="label">Profiles</span>
+          <h3>Work and personal, kept apart</h3>
+          <p>Every Chrome profile is its own choice, with its account picture. Also Brave, Edge, Vivaldi and Chromium.</p>
+        </div>
+        <div class="feature">
+          <span class="label">Rules</span>
+          <h3>Set it once</h3>
+          <p>Send a domain and its subdomains to one browser, or links from Slack to your work profile. Wildcards and regex too.</p>
+        </div>
+        <div class="feature">
+          <span class="label">Desktop apps</span>
+          <h3>Linear opens in Linear</h3>
+          <p>Issues, docs and meetings land in the app you already have open instead of another browser tab.</p>
+        </div>
+        <div class="feature">
+          <span class="label">Open tabs</span>
+          <h3>No duplicate tabs</h3>
+          <p>A link you already have open brings that tab forward. Tracking parameters and <code>#anchors</code> don't count as a different page.</p>
+        </div>
+        <div class="feature">
+          <span class="label">Recent domains</span>
+          <h3>Rules from your habits</h3>
+          <p>TrafficControl lists the domains you open and where they went. One click turns a domain into a rule.</p>
+        </div>
       </div>
     </section>
 
-    <section>
-      <h2>Privacy</h2>
-      <p style="color:var(--muted);margin:0">
-        Everything stays on your Mac. Settings and the list of domains you've opened are plain JSON files in
-        <code>~/Library/Application Support/TrafficControl</code>. TrafficControl makes no network requests of its own.
-        It reads your browsers' open tabs only to switch to one, and only after macOS asks for your permission.
-      </p>
+    <section class="block wrap" id="install">
+      <div class="block-head">
+        <span class="label">Install</span>
+        <h2>Up and running in a minute</h2>
+      </div>
+      <div class="install">
+        <ol class="steps">
+          <li><div>Download <a href="https://github.com/hakubo/TrafficControl/releases/latest/download/TrafficControl.dmg"><strong>TrafficControl.dmg</strong></a>, open it and drag TrafficControl into Applications.</div></li>
+          <li><div>Open TrafficControl. It lives in the menu bar, not the Dock.</div></li>
+          <li><div>In Settings, click <strong>Make Default</strong> and confirm the macOS prompt. Click a link anywhere to try it.</div></li>
+        </ol>
+        <div class="gate">
+          <h3>macOS says it can't verify the app?</h3>
+          <p>Releases aren't notarized by Apple yet. After the first attempt to open it, go to System Settings → Privacy &amp; Security and click <strong>Open Anyway</strong>. Or run this in Terminal:</p>
+          <div class="cmd">
+            <code id="xattr">xattr -dr com.apple.quarantine /Applications/TrafficControl.app</code>
+            <button type="button" id="copy">Copy</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block wrap privacy">
+      <div class="block-head">
+        <span class="label">Privacy</span>
+        <h2>Stays on your Mac</h2>
+      </div>
+      <p>TrafficControl makes no network requests of its own. Settings and the list of domains you've opened are plain JSON files in <code>~/Library/Application Support/TrafficControl</code>. It reads your browsers' open tabs only to switch to one, and only after macOS asks for your permission.</p>
     </section>
   </main>
 
-  <footer class="wrap">
-    TrafficControl is free and open source, and a simpler alternative to <a href="https://choosy.app">Choosy</a>.
+  <footer>
+    <div class="wrap">
+      <span>TrafficControl is free and open source. <a href="https://github.com/hakubo/TrafficControl">Source on GitHub</a>.</span>
+      <span>A simpler take on <a href="https://choosy.app">Choosy</a>.</span>
+    </div>
   </footer>
 
   <script>
-    // Show the latest version number; the download link already points at the latest release.
+    // Latest version next to the download button; the button itself always points at the latest release.
     fetch("https://api.github.com/repos/hakubo/TrafficControl/releases/latest")
       .then(r => (r.ok ? r.json() : null))
       .then(release => {
         if (!release || !release.tag_name) return;
-        const date = new Date(release.published_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-        const version = document.getElementById("version");
-        version.textContent = "";
+        const el = document.getElementById("version");
+        el.textContent = "";
         const link = document.createElement("a");
         link.href = release.html_url;
         link.textContent = "Version " + release.tag_name.replace(/^v/, "");
-        version.append(link, " · " + date);
+        el.append(link);
       })
       .catch(() => {});
+
+    document.getElementById("copy").addEventListener("click", event => {
+      const button = event.currentTarget;
+      const text = document.getElementById("xattr").textContent;
+      const done = label => { button.textContent = label; setTimeout(() => (button.textContent = "Copy"), 1600); };
+      navigator.clipboard.writeText(text).then(() => done("Copied"), () => {
+        const range = document.createRange();
+        range.selectNodeContents(document.getElementById("xattr"));
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        done("Press ⌘C");
+      });
+    });
+
+    // Radar scope: blips light up as the sweep passes and fade like phosphor.
+    (() => {
+      const canvas = document.getElementById("radar");
+      const ctx = canvas.getContext("2d");
+      const clock = document.getElementById("clock");
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const blips = [
+        { call: "LNR", dest: "Linear", angle: -0.55, dist: 0.62, color: "#b3a0ff" },
+        { call: "DOC", dest: "open tab", angle: 2.45, dist: 0.48, color: "#ff8c85" },
+        { call: "GHB", dest: "Chrome · Work", angle: 0.75, dist: 0.8, color: "#6fd3a0" },
+        { call: "HNW", dest: "picker", angle: 3.7, dist: 0.7, color: "#ffc46e" },
+        { call: "ZOM", dest: "Zoom", angle: 5.2, dist: 0.36, color: "#b3a0ff" },
+      ];
+      const period = 5200;
+      let size = { w: 0, h: 0 };
+
+      function resize() {
+        const rect = canvas.getBoundingClientRect();
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.round(rect.width * ratio);
+        canvas.height = Math.round(rect.height * ratio);
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        size = { w: rect.width, h: rect.height };
+      }
+
+      function draw(now) {
+        const { w, h } = size;
+        if (!w) return;
+        const cx = w / 2, cy = h / 2;
+        const r = Math.min(w, h) / 2 - 6;
+        const sweep = reduced.matches ? 1.1 : ((now % period) / period) * Math.PI * 2;
+        ctx.clearRect(0, 0, w, h);
+
+        // Range rings and bearing lines.
+        ctx.strokeStyle = "rgba(120, 150, 210, 0.22)";
+        ctx.lineWidth = 1;
+        for (let i = 1; i <= 4; i++) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, (r * i) / 4, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+        ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
+        ctx.stroke();
+
+        // Sweep wedge trailing the beam.
+        const trail = 1.1;
+        const steps = 40;
+        for (let i = 0; i < steps; i++) {
+          const t = i / steps;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, r, sweep - trail * (1 - t), sweep - trail * (1 - t - 1 / steps) + 0.01);
+          ctx.closePath();
+          ctx.fillStyle = `rgba(255, 181, 71, ${0.22 * t * t})`;
+          ctx.fill();
+        }
+        ctx.strokeStyle = "rgba(255, 200, 107, 0.9)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(sweep) * r, cy + Math.sin(sweep) * r);
+        ctx.stroke();
+
+        // The tower at the centre.
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = '500 11px "IBM Plex Mono", ui-monospace, Menlo, monospace';
+        ctx.textBaseline = "middle";
+        for (const b of blips) {
+          const since = reduced.matches ? 0.3 : ((sweep - b.angle) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+          const glow = Math.max(0.28, 1 - since / (Math.PI * 1.6));
+          const x = cx + Math.cos(b.angle) * r * b.dist;
+          const y = cy + Math.sin(b.angle) * r * b.dist;
+          ctx.globalAlpha = glow;
+          ctx.fillStyle = b.color;
+          ctx.shadowColor = b.color;
+          ctx.shadowBlur = 12 * glow;
+          ctx.beginPath();
+          ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          // Data tag, kept inside the scope.
+          const text = `${b.call} → ${b.dest}`;
+          const tw = ctx.measureText(text).width;
+          const left = x + 10 + tw > w - 4;
+          ctx.strokeStyle = b.color;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x + (left ? -6 : 6), y - 4);
+          ctx.lineTo(x + (left ? -12 : 12), y - 12);
+          ctx.stroke();
+          ctx.fillStyle = "#dbe5f7";
+          ctx.fillText(text, left ? x - 14 - tw : x + 14, y - 13);
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      function tick(now) {
+        draw(now);
+        if (!reduced.matches) requestAnimationFrame(tick);
+      }
+
+      function updateClock() {
+        const d = new Date();
+        clock.textContent = d.toISOString().slice(11, 16).replace(":", "") + "Z";
+      }
+
+      new ResizeObserver(() => { resize(); draw(performance.now()); }).observe(canvas);
+      reduced.addEventListener("change", () => requestAnimationFrame(tick));
+      resize();
+      updateClock();
+      setInterval(updateClock, 30000);
+      requestAnimationFrame(tick);
+    })();
   </script>
 </body>
 </html>
