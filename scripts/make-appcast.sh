@@ -32,7 +32,7 @@ NOTES="$(awk -v v="$VERSION" '/^## /{p = ($2 == v); next} p' CHANGELOG.md | awk 
     /^  +/  { if (li) { sub(/^ +/, ""); printf " %s", $0; next } }
     /^$/    { if (li) { print "</li>"; li = 0 }; if (ul) { print "</ul>"; ul = 0 }; next }
             { if (li) { print "</li>"; li = 0 }; if (ul) { print "</ul>"; ul = 0 }; print "<p>" $0 "</p>" }
-    END     { if (li) print "</li>"; if (ul) print "</ul>" }')"
+    END     { if (li) print "</li>"; if (ul) print "</ul>" }' | sed -E 's/`([^`]*)`/<code>\1<\/code>/g')"
 
 PUB_DATE="$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")"
 
