@@ -15,7 +15,7 @@ enum TrafficControlMain {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     let settings = SettingsModel()
     let history = HistoryModel()
     let updater = UpdaterModel()
@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var receivedLinkAtLaunch = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installMainMenu()
         settings.$settings
             .map(\.showMenuBarIcon)
             .removeDuplicates()
@@ -128,10 +129,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.isReleasedWhenClosed = false
             window.setContentSize(NSSize(width: 820, height: 560))
+            window.collectionBehavior.insert(.moveToActiveSpace)
+            window.delegate = self
             window.center()
             settingsWindow = window
         }
+        guard let window = settingsWindow else { return }
+
+        // While Settings is open, TrafficControl acts like a regular app (Dock icon, ⌘-Tab) so the
+        // window can't get lost behind others; windowWillClose turns it back into a menu bar app.
+        NSApp.setActivationPolicy(.regular)
+        if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate()
-        settingsWindow?.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil)
+        // Activation is cooperative since macOS 14 and can be declined; this raises the window regardless.
+        window.orderFrontRegardless()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === settingsWindow else { return }
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    /// Never shown while TrafficControl is a menu bar app, but its key equivalents still route
+    /// ⌘C/⌘V/⌘A/⌘Z to text fields in Settings, and ⌘W/⌘Q/⌘, work.
+    private func installMainMenu() {
+        let main = NSMenu()
+
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide TrafficControl", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit TrafficControl", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(withTitle: "TrafficControl", action: nil, keyEquivalent: "").submenu = appMenu
+
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        main.addItem(withTitle: "Edit", action: nil, keyEquivalent: "").submenu = edit
+
+        let window = NSMenu(title: "Window")
+        window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        main.addItem(withTitle: "Window", action: nil, keyEquivalent: "").submenu = window
+        NSApp.windowsMenu = window
+
+        NSApp.mainMenu = main
     }
 }

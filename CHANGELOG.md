@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Opening Settings while it's already open now brings the window to the front, also when it's minimized
+  or on another desktop. While Settings is open, TrafficControl shows in the Dock and in ⌘-Tab.
+- Copy, paste, select all and undo work in Settings' text fields, and ⌘W closes the window.
+
 ## 0.1.2
 
 - Automatic updates: TrafficControl checks for new versions daily and installs them for you.

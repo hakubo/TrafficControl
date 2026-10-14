@@ -45,6 +45,12 @@ final class PickerPanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
 
+    /// ⌘-shortcuts reach the window before the main menu, so ⌘C copies the link instead of hitting Edit → Copy.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if keyHandler?(event) == true { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, keyHandler?(event) == true { return }
         super.sendEvent(event)
