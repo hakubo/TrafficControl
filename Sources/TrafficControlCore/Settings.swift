@@ -21,6 +21,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var defaultBehavior: DefaultBehavior = .alwaysAsk
     public var primaryBrowser: BrowserTarget?
     public var browserOrder: [String] = []
+    /// Order of picker entries, where each profile of a multi-profile browser is its own entry.
+    /// Wins over `browserOrder`; entries missing from it keep their `browserOrder` place, after these.
+    public var choiceOrder: [BrowserTarget] = []
     public var hiddenBrowserIDs: [String] = []
     public var hiddenProfiles: [BrowserTarget] = []
     public var rules: [Rule] = []
@@ -41,7 +44,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case defaultBehavior, primaryBrowser, browserOrder, hiddenBrowserIDs, hiddenProfiles, rules, appLinkModes
+        case defaultBehavior, primaryBrowser, browserOrder, choiceOrder, hiddenBrowserIDs, hiddenProfiles, rules, appLinkModes
         case showURLInPicker, showMenuBarIcon, forcePickerWithOption, rememberDomains, tabReuse
     }
 
@@ -52,6 +55,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         defaultBehavior = try c.decodeIfPresent(DefaultBehavior.self, forKey: .defaultBehavior) ?? d.defaultBehavior
         primaryBrowser = try c.decodeIfPresent(BrowserTarget.self, forKey: .primaryBrowser)
         browserOrder = try c.decodeIfPresent([String].self, forKey: .browserOrder) ?? d.browserOrder
+        choiceOrder = try c.decodeIfPresent([BrowserTarget].self, forKey: .choiceOrder) ?? d.choiceOrder
         hiddenBrowserIDs = try c.decodeIfPresent([String].self, forKey: .hiddenBrowserIDs) ?? d.hiddenBrowserIDs
         hiddenProfiles = try c.decodeIfPresent([BrowserTarget].self, forKey: .hiddenProfiles) ?? d.hiddenProfiles
         rules = try c.decodeIfPresent([Rule].self, forKey: .rules) ?? d.rules
@@ -61,6 +65,43 @@ public struct AppSettings: Codable, Equatable, Sendable {
         forcePickerWithOption = try c.decodeIfPresent(Bool.self, forKey: .forcePickerWithOption) ?? d.forcePickerWithOption
         rememberDomains = try c.decodeIfPresent(Bool.self, forKey: .rememberDomains) ?? d.rememberDomains
         tabReuse = try c.decodeIfPresent(TabReuseMode.self, forKey: .tabReuse) ?? d.tabReuse
+    }
+}
+
+// MARK: - Picker entries
+
+extension AppSettings {
+    /// Sorts picker entries by `choiceOrder`. Entries it doesn't mention (a profile added since)
+    /// go last, keeping the order they came in.
+    public func sortedByChoiceOrder<T>(_ items: [T], target: (T) -> BrowserTarget) -> [T] {
+        var rank: [BrowserTarget: Int] = [:]
+        for (i, t) in choiceOrder.enumerated() where rank[t] == nil { rank[t] = i }
+        return items.enumerated()
+            .sorted { (rank[target($0.element)] ?? Int.max, $0.offset) < (rank[target($1.element)] ?? Int.max, $1.offset) }
+            .map(\.element)
+    }
+
+    /// Whether the picker leaves this entry out: its whole browser is hidden, or just this profile.
+    public func isHidden(_ target: BrowserTarget) -> Bool {
+        hiddenBrowserIDs.contains(target.browserID) || (target.profileID != nil && hiddenProfiles.contains(target))
+    }
+
+    /// Shows or hides one entry. `siblings` are the other profiles of the same browser: showing a
+    /// profile of a browser hidden as a whole unhides the browser but keeps those siblings hidden.
+    public mutating func setHidden(_ hidden: Bool, _ target: BrowserTarget, siblings: [BrowserTarget] = []) {
+        guard target.profileID != nil else {
+            hiddenBrowserIDs.removeAll { $0 == target.browserID }
+            if hidden { hiddenBrowserIDs.append(target.browserID) }
+            return
+        }
+        if !hidden, hiddenBrowserIDs.contains(target.browserID) {
+            hiddenBrowserIDs.removeAll { $0 == target.browserID }
+            for sibling in siblings where sibling != target && !hiddenProfiles.contains(sibling) {
+                hiddenProfiles.append(sibling)
+            }
+        }
+        hiddenProfiles.removeAll { $0 == target }
+        if hidden { hiddenProfiles.append(target) }
     }
 }
 

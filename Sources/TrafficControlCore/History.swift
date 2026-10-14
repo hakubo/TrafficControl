@@ -184,13 +184,16 @@ public struct LinkHistory: Codable, Equatable, Sendable {
 }
 
 extension Rule {
-    /// A rule for a domain or a path on it ("github.com", "github.com/buffer"), including subdomains
-    /// and everything below the path.
+    /// A rule for a domain or a path on it ("github.com", "github.com/buffer"): Domain is …, including
+    /// subdomains, and for a path also Path is …, including sub-paths.
     public static func forAddress(_ address: String, to target: BrowserTarget?) -> Rule {
         let address = LinkAddress.normalize(address)
+        let (host, path) = ConditionOperator.split(address)
+        var conditions = [Condition(field: .host, op: .isDomain, value: host)]
+        if !path.isEmpty { conditions.append(Condition(field: .path, op: .isUnder, value: path)) }
         return Rule(
             name: address,
-            conditions: [Condition(field: .address, op: .isUnder, value: address)],
+            conditions: conditions,
             action: target.map { .open(browserID: $0.browserID, profileID: $0.profileID) } ?? .ask)
     }
 

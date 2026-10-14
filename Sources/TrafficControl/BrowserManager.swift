@@ -86,22 +86,25 @@ final class BrowserManager: ObservableObject {
         return list.count > 1 ? list : []
     }
 
-    /// What the picker shows: the desktop app for this link (if any), then visible browsers,
-    /// with multi-profile browsers expanded into their visible profiles.
+    /// What the picker shows: the desktop app for this link (if any), then the visible entries of `orderedChoices`.
     func pickerChoices(_ settings: AppSettings, for url: URL? = nil) -> [BrowserChoice] {
         var app: [BrowserChoice] = []
         if let url, let (link, deepLink) = AppLink.first(for: url), settings.appLinkMode(for: link.id) != .never,
            let appURL = appURL(for: link.bundleID) {
             app = [BrowserChoice(browser: Browser(id: link.bundleID, name: link.name, appURL: appURL), profile: nil, deepLink: deepLink)]
         }
-        let hidden = Set(settings.hiddenProfiles)
-        return app + ordered(settings, includeHidden: false).flatMap { browser -> [BrowserChoice] in
+        return app + orderedChoices(settings, includeHidden: false)
+    }
+
+    /// Browsers in the picker's order, with multi-profile browsers expanded into one entry per profile.
+    func orderedChoices(_ settings: AppSettings, includeHidden: Bool) -> [BrowserChoice] {
+        let all = ordered(settings, includeHidden: true).flatMap { browser -> [BrowserChoice] in
             let list = selectableProfiles(for: browser.id)
             guard !list.isEmpty else { return [BrowserChoice(browser: browser, profile: nil)] }
-            return list
-                .filter { !hidden.contains(BrowserTarget(browserID: browser.id, profileID: $0.id)) }
-                .map { BrowserChoice(browser: browser, profile: $0, avatar: $0.avatarPath.flatMap(NSImage.init(contentsOfFile:))) }
+            return list.map { BrowserChoice(browser: browser, profile: $0, avatar: $0.avatarPath.flatMap(NSImage.init(contentsOfFile:))) }
         }
+        return settings.sortedByChoiceOrder(all, target: \.target)
+            .filter { includeHidden || !settings.isHidden($0.target) }
     }
 
     /// Every browser plus each of its profiles, for rule and primary-browser menus.

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.5
+
+- Redesigned Settings window with a sidebar, like System Settings.
+- Each Chrome profile is its own entry in the picker order, so you can place profiles of the same
+  browser anywhere in the list.
+- Recent Domains is now called History.
+- If another app becomes your default browser, the menu bar icon gets an orange dot and its menu
+  says links aren't reaching TrafficControl.
+- Path rules are back to two plain conditions: Domain and Path. Create Rule makes
+  "Domain is github.com, including subdomains" and "Path is /buffer, including sub-paths".
+  Rules made with the Link condition in 0.1.4 are converted automatically.
+- Clearer option names: "is, including subdomains" for domains and "is, including sub-paths" for paths,
+  instead of "is or is under".
+
 ## 0.1.4
 
 - Rules can target a path: a rule for `github.com/buffer` sends that page and everything below it

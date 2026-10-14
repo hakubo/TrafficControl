@@ -103,6 +103,40 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     }
 }
 
+@Suite struct PickerEntryTests {
+    private let work = BrowserTarget(browserID: chrome, profileID: "Profile 1")
+    private let home = BrowserTarget(browserID: chrome, profileID: "Default")
+    private let plainSafari = BrowserTarget(browserID: safari)
+
+    @Test func choiceOrderPutsUnknownEntriesLast() {
+        var s = AppSettings()
+        s.choiceOrder = [work, plainSafari]
+        #expect(s.sortedByChoiceOrder([home, plainSafari, work], target: { $0 }) == [work, plainSafari, home])
+    }
+
+    @Test func emptyChoiceOrderKeepsIncomingOrder() {
+        #expect(AppSettings().sortedByChoiceOrder([home, plainSafari, work], target: { $0 }) == [home, plainSafari, work])
+    }
+
+    @Test func showingAProfileOfAHiddenBrowserKeepsItsSiblingsHidden() {
+        var s = AppSettings()
+        s.hiddenBrowserIDs = [chrome]
+        #expect(s.isHidden(work) && s.isHidden(home))
+        s.setHidden(false, work, siblings: [home, work])
+        #expect(!s.isHidden(work))
+        #expect(s.isHidden(home))
+        #expect(s.hiddenBrowserIDs.isEmpty)
+    }
+
+    @Test func hidingPlainBrowser() {
+        var s = AppSettings()
+        s.setHidden(true, plainSafari)
+        #expect(s.hiddenBrowserIDs == [safari])
+        s.setHidden(false, plainSafari)
+        #expect(!s.isHidden(plainSafari))
+    }
+}
+
 @Suite struct SettingsStoreTests {
     @Test func roundTripsAndToleratesMissingKeys() throws {
         let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString).appending(path: "s.json")
@@ -315,19 +349,37 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     private let personal = BrowserTarget(browserID: chrome, profileID: "Default")
     private let work = BrowserTarget(browserID: chrome, profileID: "Profile 2")
 
-    @Test func linkIsOrIsUnderMatchesWholeSegmentsOnly() {
-        let c = Condition(field: .address, op: .isUnder, value: "github.com/buffer")
-        #expect(c.matches(link("https://github.com/buffer")))
-        #expect(c.matches(link("https://www.github.com/buffer/api/pull/88?w=1")))
-        #expect(c.matches(link("https://GitHub.com/Buffer/")))
-        #expect(!c.matches(link("https://github.com/buffer-labs")))
-        #expect(!c.matches(link("https://github.com/hakubo")))
-        #expect(!c.matches(link("https://gitlab.com/buffer")))
+    @Test func domainAndPathRuleMatchesWholeSegmentsOnly() {
+        let rule = Rule.forAddress("github.com/buffer", to: work)
+        #expect(rule.conditions.map(\.field) == [.host, .path])
+        #expect(rule.matches(link("https://github.com/buffer")))
+        #expect(rule.matches(link("https://www.github.com/buffer/api/pull/88?w=1")))
+        #expect(rule.matches(link("https://GitHub.com/Buffer/")))
+        #expect(!rule.matches(link("https://github.com/buffer-labs")))
+        #expect(!rule.matches(link("https://github.com/hakubo")))
+        #expect(!rule.matches(link("https://gitlab.com/buffer")))
     }
 
-    @Test func linkValueAcceptsPastedURLsAndBareDomains() {
-        #expect(Condition(field: .address, op: .isUnder, value: "https://www.github.com/hakubo/").matches(link("https://github.com/hakubo/x")))
-        #expect(Condition(field: .address, op: .isUnder, value: "github.com").matches(link("https://gist.github.com/a")))
+    @Test func rulesFromPastedURLsAndBareDomains() {
+        #expect(Rule.forAddress("https://www.github.com/hakubo/", to: nil).matches(link("https://github.com/hakubo/x")))
+        let domainOnly = Rule.forAddress("github.com", to: nil)
+        #expect(domainOnly.conditions.count == 1)
+        #expect(domainOnly.matches(link("https://gist.github.com/a")))
+    }
+
+    @Test func linkConditionsFrom014LoadAsDomainAndPath() throws {
+        let json = #"""
+        {"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"Work","isEnabled":true,"matchMode":"any",
+         "conditions":[{"id":"7F9619FF-8B86-D011-B42D-00C04FC964FF","field":"address","op":"isUnder","value":"github.com/buffer"}],
+         "action":{"ask":{}}}
+        """#
+        let rule = try JSONDecoder().decode(Rule.self, from: Data(json.utf8))
+        #expect(rule.matchMode == .all)
+        #expect(rule.conditions.map(\.field) == [.host, .path])
+        #expect(rule.conditions.map(\.op) == [.isDomain, .isUnder])
+        #expect(rule.conditions.map(\.value) == ["github.com", "/buffer"])
+        #expect(rule.matches(link("https://github.com/buffer/x")))
+        #expect(!rule.matches(link("https://github.com/hakubo")))
     }
 
     @Test func pathIsOrIsUnderWithOrWithoutSlash() {

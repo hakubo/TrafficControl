@@ -117,6 +117,35 @@ enum DefaultBrowser {
     }
 }
 
+/// Whether TrafficControl is the default browser, kept current: another browser can take over at
+/// any time (many ask on launch), and then links silently stop arriving here.
+@MainActor
+final class DefaultBrowserStatus: ObservableObject {
+    @Published private(set) var isDefault = DefaultBrowser.isDefault
+    private var timer: Timer?
+    private var activation: NSObjectProtocol?
+
+    init() {
+        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
+        activation = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
+    }
+
+    func refresh() {
+        let now = DefaultBrowser.isDefault
+        if now != isDefault { isDefault = now }
+    }
+
+    func makeDefault() {
+        DefaultBrowser.makeDefault { [weak self] in self?.refresh() }
+    }
+}
+
 enum LoginItem {
     static var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
 

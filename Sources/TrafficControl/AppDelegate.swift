@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     let settings = SettingsModel()
     let history = HistoryModel()
     let updater = UpdaterModel()
+    let defaultStatus = DefaultBrowserStatus()
     lazy var browsers = BrowserManager()
     lazy var picker = PickerController(settings: settings, browsers: browsers, history: history)
     lazy var router = LinkRouter(settings: settings, browsers: browsers, picker: picker, history: history)
@@ -35,9 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             .removeDuplicates()
             .sink { [weak self] show in self?.updateStatusItem(visible: show) }
             .store(in: &cancellables)
+        defaultStatus.$isDefault
+            .sink { [weak self] isDefault in self?.updateStatusIcon(isDefault: isDefault) }
+            .store(in: &cancellables)
 
         // Launched by hand rather than by a link: help the user finish setting up.
-        if !receivedLinkAtLaunch && !DefaultBrowser.isDefault {
+        if !receivedLinkAtLaunch && !defaultStatus.isDefault {
             showSettings()
         }
     }
@@ -66,16 +70,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "TrafficControl")
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
         statusItem = item
+        updateStatusIcon(isDefault: defaultStatus.isDefault)
+    }
+
+    /// The menu bar icon gets an orange dot while links aren't reaching TrafficControl.
+    private func updateStatusIcon(isDefault: Bool) {
+        guard let button = statusItem?.button,
+              let symbol = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "TrafficControl")
+        else { return }
+        button.toolTip = isDefault ? "TrafficControl" : "TrafficControl isn't your default browser"
+        guard !isDefault else {
+            button.image = symbol
+            return
+        }
+        let base = symbol.withSymbolConfiguration(.init(pointSize: 14, weight: .regular)) ?? symbol
+        let size = NSSize(width: base.size.width + 3, height: base.size.height + 2)
+        // Drawn at display time, so the symbol takes the menu bar's current text color.
+        let image = NSImage(size: size, flipped: false) { rect in
+            let tinted = base.withSymbolConfiguration(.init(paletteColors: [.labelColor])) ?? base
+            tinted.draw(in: NSRect(x: 0, y: 1, width: base.size.width, height: base.size.height))
+            let dot = NSRect(x: rect.maxX - 7, y: rect.maxY - 7, width: 7, height: 7)
+            NSColor.systemOrange.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
+        image.isTemplate = false
+        image.accessibilityDescription = "TrafficControl isn't your default browser"
+        button.image = image
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        if !DefaultBrowser.isDefault {
+        defaultStatus.refresh()
+        if !defaultStatus.isDefault {
+            let warning = menu.addItem(withTitle: "Links aren't coming to TrafficControl", action: nil, keyEquivalent: "")
+            warning.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(paletteColors: [.systemOrange]))
+            warning.isEnabled = false
+            if #available(macOS 14.4, *) {
+                warning.subtitle = "Another app is your default browser."
+            }
             menu.addItem(withTitle: "Make TrafficControl the Default Browser", action: #selector(makeDefault), keyEquivalent: "").target = self
             menu.addItem(.separator())
         }
@@ -113,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     @objc private func makeDefault() {
-        DefaultBrowser.makeDefault()
+        defaultStatus.makeDefault()
     }
 
     @objc func showSettings() {
@@ -124,11 +162,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 .environmentObject(browsers)
                 .environmentObject(history)
                 .environmentObject(updater)
-            let window = NSWindow(contentViewController: NSHostingController(rootView: root))
+                .environmentObject(defaultStatus)
+            // A full-size content view plus an (empty) unified toolbar lets the sidebar run under the
+            // title bar, like System Settings; SettingsView sets the title to the selected pane.
+            let window = NSWindow(
+                contentRect: .zero,
+                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                backing: .buffered, defer: false)
+            window.contentView = NSHostingView(rootView: root)
+            window.toolbar = NSToolbar()
+            window.toolbarStyle = .unified
             window.title = "TrafficControl"
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 820, height: 560))
+            window.setContentSize(NSSize(width: 907, height: 821))
             window.collectionBehavior.insert(.moveToActiveSpace)
             window.delegate = self
             window.center()

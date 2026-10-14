@@ -14,12 +14,16 @@ public struct LinkContext: Sendable, Equatable {
 }
 
 public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
-    /// Domain plus path without the scheme, e.g. "github.com/hakubo".
+    /// Domain plus path, e.g. "github.com/hakubo". Only in rules saved by 0.1.4: those load as a
+    /// Domain condition plus a Path condition, and new rules can't pick it.
     case address
     case host
     case url
     case path
     case sourceApp
+
+    /// The fields offered when editing a condition.
+    public static let selectable: [ConditionField] = [.host, .path, .url, .sourceApp]
 
     public var label: String {
         switch self {
@@ -36,7 +40,7 @@ public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
         switch self {
         case .address: [.isUnder, .beginsWith, .equals, .contains, .wildcard, .regex]
         case .host: [.isDomain, .equals, .contains, .beginsWith, .endsWith, .wildcard, .regex]
-        case .path: [.isUnder, .beginsWith, .contains, .equals, .endsWith, .wildcard, .regex]
+        case .path: [.isUnder, .equals, .beginsWith, .contains, .endsWith, .wildcard, .regex]
         case .sourceApp: [.equals, .contains, .beginsWith, .wildcard, .regex]
         case .url: [.contains, .equals, .beginsWith, .endsWith, .wildcard, .regex]
         }
@@ -47,7 +51,7 @@ public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
         case .address: "github.com/hakubo"
         case .host: "github.com"
         case .url: "https://example.com/*"
-        case .path: "/hakubo"
+        case .path: "/buffer"
         case .sourceApp: "com.tinyspeck.slackmacgap or Slack"
         }
     }
@@ -67,7 +71,8 @@ public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable
 
     public var label: String {
         switch self {
-        case .isUnder, .isDomain: "is or is under"
+        case .isDomain: "is, including subdomains"
+        case .isUnder: "is, including sub-paths"
         case .equals: "is"
         case .contains: "contains"
         case .beginsWith: "begins with"
@@ -168,7 +173,7 @@ public struct Condition: Codable, Identifiable, Equatable, Hashable, Sendable {
     public var op: ConditionOperator
     public var value: String
 
-    public init(id: UUID = UUID(), field: ConditionField = .address, op: ConditionOperator? = nil, value: String = "") {
+    public init(id: UUID = UUID(), field: ConditionField = .host, op: ConditionOperator? = nil, value: String = "") {
         self.id = id
         self.field = field
         self.op = op ?? field.operators[0]
@@ -188,6 +193,19 @@ public struct Condition: Codable, Identifiable, Equatable, Hashable, Sendable {
         case .sourceApp: subjects = [context.sourceBundleID, context.sourceAppName].compactMap { $0 }
         }
         return subjects.contains { op.evaluate($0, pattern: pattern) }
+    }
+}
+
+extension Condition {
+    /// A 0.1.4 Link condition ("github.com/buffer", is or is under) as the equivalent Domain and Path
+    /// conditions; nil for anything else.
+    func splitIntoDomainAndPath() -> [Condition]? {
+        guard field == .address, op == .isUnder else { return nil }
+        let (host, path) = ConditionOperator.split(LinkAddress.normalize(value))
+        guard !host.isEmpty else { return nil }
+        var parts = [Condition(id: id, field: .host, op: .isDomain, value: host)]
+        if !path.isEmpty { parts.append(Condition(field: .path, op: .isUnder, value: path)) }
+        return parts
     }
 }
 
@@ -225,6 +243,25 @@ public struct Rule: Codable, Identifiable, Equatable, Hashable, Sendable {
         self.matchMode = matchMode
         self.conditions = conditions
         self.action = action
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, isEnabled, matchMode, conditions, action
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        isEnabled = try c.decode(Bool.self, forKey: .isEnabled)
+        matchMode = try c.decode(MatchMode.self, forKey: .matchMode)
+        action = try c.decode(RuleAction.self, forKey: .action)
+        let saved = try c.decode([Condition].self, forKey: .conditions)
+        // Splitting one condition into two only means the same thing when all of them must match.
+        conditions = matchMode == .all || saved.count == 1
+            ? saved.flatMap { $0.splitIntoDomainAndPath() ?? [$0] }
+            : saved
+        if saved.count == 1, conditions.count > 1 { matchMode = .all }
     }
 
     /// A rule with no usable conditions never matches, so a half-written rule can't swallow every link.

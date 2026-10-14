@@ -48,10 +48,9 @@ TrafficControl updates itself: it checks daily and installs new versions (from 0
 
   When the picker shows such a link, the app is offered as the first choice.
 - **Rules**, checked top to bottom, first match wins. A rule's conditions can look at:
-  - link: a domain or domain plus path (`github.com/buffer` is or is under: that page, everything below it,
-    and its subdomains), so `github.com/buffer` can go to your work profile and `github.com/hakubo` to your
-    personal one
-  - domain, full URL, path
+  - domain (`is, including subdomains`) and path (`is, including sub-paths`), so `github.com` + `/buffer`
+    can go to your work profile and `github.com` + `/hakubo` to your personal one
+  - full URL
   - source app (bundle ID or name, e.g. links clicked in Slack)
   - match types: is, contains, begins with, ends with, wildcard (`*`, `?`), regex
   - match **all** or **any** condition; action is *open in browser X* or *show the picker*
@@ -63,9 +62,9 @@ TrafficControl updates itself: it checks daily and installs new versions (from 0
   macOS asks once per browser for permission; without it links just open normally. Chrome's AppleScript doesn't
   say which profile a window belongs to, so a tab open in another profile counts as open. Firefox can't be supported
   (no AppleScript access to tabs).
-- **Recent domains**: every link that gets opened records its domain (minus `www.`) and where it went:
+- **History**: every link that gets opened records its domain (minus `www.`) and where it went:
   which browser, which profile or desktop app. The picker preselects what you usually choose for that domain.
-  In Settings → Rules → *Recent Domains*, click ＋ next to a domain to turn it into a rule using that usual
+  In Settings → Rules → *History*, click ＋ next to a domain to turn it into a rule using that usual
   choice, or open it to see the breakdown and pick a different target. Domains a rule already covers are
   marked ✓. Kept in `history.json` next to the settings (last 500 domains); can be turned off or cleared.
 - **When no rule matches**: always ask, use the primary browser, use the only running
