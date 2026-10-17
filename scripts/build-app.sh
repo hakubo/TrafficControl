@@ -4,16 +4,19 @@
 #   BUILD_NUMBER=42 sets CFBundleVersion (default: MAJOR*10000 + MINOR*100 + PATCH of the version,
 #                   so 0.1.6 -> 106; monotonic by construction, independent of git history)
 #   ARCHS="arm64"   builds only some architectures (default: "arm64 x86_64")
+#   TIMING_LOGS=1   compiles in per-click routing timings (see Sources/TrafficControl/Timing.swift)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 APP="build/TrafficControl.app"
 ARCHS="${ARCHS:-arm64 x86_64}"
+FLAGS=()
+if [[ -n "${TIMING_LOGS:-}" ]]; then FLAGS+=(-Xswiftc -DTIMING_LOGS); fi
 
 binaries=()
 for arch in $ARCHS; do
-    swift build -c release --arch "$arch"
-    binaries+=("$(swift build -c release --arch "$arch" --show-bin-path)/TrafficControl")
+    swift build -c release --arch "$arch" ${FLAGS[@]+"${FLAGS[@]}"}
+    binaries+=("$(swift build -c release --arch "$arch" ${FLAGS[@]+"${FLAGS[@]}"} --show-bin-path)/TrafficControl")
 done
 
 rm -rf "$APP"

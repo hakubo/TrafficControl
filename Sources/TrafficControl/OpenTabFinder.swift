@@ -69,7 +69,7 @@ enum OpenTabFinder {
         guard TabMatching.key(for: url) != nil else { return nil }
         let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
         for id in browserIDs where supports(id) && running.contains(id) && !deniedBrowsers.contains(id) {
-            if let hit = TabMatching.find(url, in: windows(of: id)) {
+            if let hit = TabMatching.find(url, in: Timing.measure("read tabs of \(id)") { windows(of: id) }) {
                 return OpenTab(browserID: id, windowID: hit.window, tabIndex: hit.tabIndex)
             }
         }
@@ -111,6 +111,23 @@ enum OpenTabFinder {
 
     /// Every window's id and tab URLs, front to back. Windows without tabs (e.g. Settings) are skipped.
     private static func windows(of browserID: String) -> [(id: Int, tabs: [String])] {
+        // Two Apple events in total instead of two per window. Fails if any window has no tabs, so fall back.
+        let fast = """
+            tell application id "\(browserID)" to return {id of every window, URL of every tab of every window}
+            """
+        if let result = run(fast, browserID: browserID, cached: true, quiet: true) {
+            let parts = items(of: result)
+            if parts.count == 2 {
+                let ids = items(of: parts[0])
+                let tabs = items(of: parts[1])
+                if ids.count == tabs.count {
+                    return zip(ids, tabs).map { id, list in
+                        (id: Int(id.int32Value), tabs: items(of: list).map { $0.stringValue ?? "" })
+                    }
+                }
+            }
+        }
+        if deniedBrowsers.contains(browserID) { return [] }
         let script = """
             tell application id "\(browserID)"
                 set out to {}
@@ -137,7 +154,7 @@ enum OpenTabFinder {
     }
 
     /// `cached` is for sources that never change per browser; per-call sources (window and tab ids) compile each time.
-    private static func run(_ source: String, browserID: String, cached: Bool = false) -> NSAppleEventDescriptor? {
+    private static func run(_ source: String, browserID: String, cached: Bool = false, quiet: Bool = false) -> NSAppleEventDescriptor? {
         var error: NSDictionary?
         var script = cached ? compiledScripts[source] : nil
         if script == nil {
@@ -152,7 +169,7 @@ enum OpenTabFinder {
         if let error {
             // -1743: the user hasn't allowed TrafficControl to control this browser.
             if (error[NSAppleScript.errorNumber] as? Int) == -1743 { deniedBrowsers.insert(browserID) }
-            NSLog("TrafficControl: AppleScript failed: \(error)")
+            if !quiet { NSLog("TrafficControl: AppleScript failed: \(error)") }
             return nil
         }
         return result
