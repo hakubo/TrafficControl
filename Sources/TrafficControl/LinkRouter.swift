@@ -58,7 +58,9 @@ final class LinkRouter {
     }
 
     func route(_ urls: [URL], senderPID: pid_t?) {
-        browsers.refresh()
+        let start = ContinuousClock.now
+        defer { Timing.report("route total", since: start) }
+        Timing.measure("refresh browsers") { browsers.refresh() }
         let source = sourceApplication(pid: senderPID)
         let current = settings.settings
         let held = modifiers.held()
@@ -78,7 +80,8 @@ final class LinkRouter {
                 forcePicker: forcePicker,
                 override: override)
 
-            let decision = Router.decide(context, settings: current, environment: environment)
+            let decision = Timing.measure("decide") { Router.decide(context, settings: current, environment: environment) }
+            Timing.note("\(url.host() ?? "?") -> \(decision)")
             let overridden = override.map { $0.isActive(at: environment.now) && decision == .open($0.target, ruleID: nil) } ?? false
 
             // Already open somewhere? Go there instead of opening a duplicate. Desktop apps still win,
@@ -87,7 +90,8 @@ final class LinkRouter {
             // its browser (say, the one being screen-shared), so it skips this too.
             if current.tabReuse == .anyBrowser, !forcePicker, !decision.isApp, !overridden,
                 !Self.ruleUsesKeys(decision, in: current.rules),
-                let tab = OpenTabFinder.find(url, in: tabSearchOrder(decision)), OpenTabFinder.focus(tab)
+                let tab = Timing.measure("find open tab (any browser)") { OpenTabFinder.find(url, in: tabSearchOrder(decision)) },
+                Timing.measure("focus tab") { OpenTabFinder.focus(tab) }
             {
                 continue
             }

@@ -187,7 +187,9 @@ final class BrowserManager: ObservableObject {
 
     func openInApp(_ deepLink: URL, bundleID: String) {
         guard let app = appURL(for: bundleID) else { return }
+        let start = ContinuousClock.now
         NSWorkspace.shared.open([deepLink], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+            Timing.report("hand link to \(bundleID)", since: start)
             if let error { NSLog("TrafficControl: failed to open \(deepLink) in \(bundleID): \(error)") }
         }
     }
@@ -209,7 +211,9 @@ final class BrowserManager: ObservableObject {
 
     /// Switches to a tab of `browser` already showing the link when `reuseTab` is set, otherwise opens it.
     func openOrSwitch(_ url: URL, in browser: Browser, profileID: String?, inBackground: Bool, reuseTab: Bool) {
-        if reuseTab, let tab = OpenTabFinder.find(url, in: [browser.id]), OpenTabFinder.focus(tab, activate: !inBackground) {
+        if reuseTab, let tab = Timing.measure("find open tab (target browser)", { OpenTabFinder.find(url, in: [browser.id]) }),
+            Timing.measure("focus tab", { OpenTabFinder.focus(tab, activate: !inBackground) })
+        {
             return
         }
         open([url], in: browser, profileID: profileID, inBackground: inBackground)
@@ -218,17 +222,38 @@ final class BrowserManager: ObservableObject {
     func open(_ urls: [URL], in browser: Browser, profileID: String? = nil, inBackground: Bool) {
         let config = NSWorkspace.OpenConfiguration()
         config.activates = !inBackground
+        let start = ContinuousClock.now
+        if let profileID, !inBackground, runningBrowserIDs.contains(browser.id),
+            let executable = Bundle(url: browser.appURL)?.executableURL
+        {
+            // The browser is already running: start its executable directly. It hands the arguments to the
+            // running browser and exits, without the cost of LaunchServices registering a new app instance.
+            let process = Process()
+            process.executableURL = executable
+            process.arguments = ChromiumProfiles.launchArguments(profileID: profileID, urls: urls)
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            process.terminationHandler = { _ in Timing.report("hand off to \(browser.name) for profile \(profileID)", since: start) }
+            do {
+                try process.run()
+                return
+            } catch {
+                NSLog("TrafficControl: failed to start \(executable.path): \(error)")
+            }
+        }
         if let profileID {
             // Like `open -n --args`: a fresh process receives the arguments and hands them to the
             // running browser, which opens the links in that profile's window.
             config.createsNewApplicationInstance = true
             config.arguments = ChromiumProfiles.launchArguments(profileID: profileID, urls: urls)
             NSWorkspace.shared.openApplication(at: browser.appURL, configuration: config) { _, error in
+                Timing.report("launch \(browser.name) for profile \(profileID)", since: start)
                 if let error { NSLog("TrafficControl: failed to open in \(browser.name) (\(profileID)): \(error)") }
             }
             return
         }
         NSWorkspace.shared.open(urls, withApplicationAt: browser.appURL, configuration: config) { _, error in
+            Timing.report("hand link to \(browser.name)", since: start)
             if let error { NSLog("TrafficControl: failed to open in \(browser.name): \(error)") }
         }
     }

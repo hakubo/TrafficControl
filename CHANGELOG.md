@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Links that open in a Chrome (or other Chromium) profile reach the browser about twice as fast:
+  TrafficControl starts the browser's executable directly instead of launching a new app instance.
+- Checking a browser's open tabs takes two AppleScript round trips instead of two per window.
+- `TIMING_LOGS=1 make app` builds a copy that logs how long each routing step takes.
+
 ## 0.2.0
 
 - Send all links to one browser or profile for an hour from the menu bar ("Send All Links To"),
