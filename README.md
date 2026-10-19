@@ -33,6 +33,7 @@ TrafficControl updates itself: it checks daily and installs new versions (from 0
   - first letter of a browser's name: jump to it (opens right away if no other browser shares the letter)
   - `←` `→` / `Tab` then `⏎`: open the selected browser
   - hold `⇧` while choosing: open in the background
+  - hold `⌘` while choosing: always open this site there (saved as a rule; the picker shows a pin while `⌘` is down)
   - `⌘C`: copy the link and close; `Esc` or a click outside: cancel
 - **Browser profiles** for Chrome and other Chromium browsers (Chrome Beta/Dev/Canary, Chromium, Brave, Edge, Vivaldi).
   A browser with more than one profile shows one picker entry per profile, with the profile's account picture.

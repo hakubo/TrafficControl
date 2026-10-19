@@ -16,9 +16,14 @@ final class PickerModel: ObservableObject {
     @Published var selection: Int
     /// The tile under the pointer: a lighter highlight that never changes what Return opens.
     @Published var hovered: Int?
+    /// ⌘ is held: the pick also becomes the rule for this domain.
+    @Published var remembering = false
     /// Full keyboard hint line vs. a "?" tooltip once the user has seen it a few times.
     var showFullHint = true
     var onChoose: (Int, Bool) -> Void = { _, _ in }
+
+    /// "github.com", the part of the link a remembered pick applies to.
+    var domain: String? { LinkAddress.of(url, depth: 0) }
 
     init(url: URL, sourceName: String?, choices: [BrowserChoice], showURL: Bool, selection: Int) {
         self.url = url
@@ -33,6 +38,7 @@ final class PickerModel: ObservableObject {
 /// so the app you clicked the link in stays frontmost.
 final class PickerPanel: NSPanel {
     var keyHandler: ((NSEvent) -> Bool)?
+    var flagsHandler: ((NSEvent.ModifierFlags) -> Void)?
 
     init() {
         super.init(
@@ -57,6 +63,7 @@ final class PickerPanel: NSPanel {
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, keyHandler?(event) == true { return }
+        if event.type == .flagsChanged { flagsHandler?(event.modifierFlags) }
         super.sendEvent(event)
     }
 }
@@ -72,6 +79,8 @@ final class PickerController {
     private var model: PickerModel?
     private var current: PickerRequest?
     private var monitors: [Any] = []
+    /// ⌘ was already down when the picker opened (it can be the picker key), so it only counts once released.
+    private var rememberKeyBlocked = false
 
     init(settings: SettingsModel, browsers: BrowserManager, history: HistoryModel) {
         self.settings = settings
@@ -115,10 +124,14 @@ final class PickerController {
         let hintCount = UserDefaults.standard.integer(forKey: "pickerHintShownCount")
         model.showFullHint = hintCount < 10
         UserDefaults.standard.set(hintCount + 1, forKey: "pickerHintShownCount")
-        model.onChoose = { [weak self] index, background in self?.choose(index, inBackground: background) }
+        model.onChoose = { [weak self] index, background in
+            self?.choose(index, inBackground: background, remember: self?.model?.remembering ?? false)
+        }
+        rememberKeyBlocked = NSEvent.modifierFlags.contains(.command)
 
         let panel = PickerPanel()
         panel.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
+        panel.flagsHandler = { [weak self] flags in self?.flagsChanged(flags) }
         let host = NSHostingView(rootView: PickerView(model: model))
         panel.contentView = host
         let size = host.fittingSize
@@ -153,11 +166,18 @@ final class PickerController {
         return origin
     }
 
+    private func flagsChanged(_ flags: NSEvent.ModifierFlags) {
+        let command = flags.contains(.command)
+        if !command { rememberKeyBlocked = false }
+        model?.remembering = command && !rememberKeyBlocked
+    }
+
     private func handleKey(_ event: NSEvent) -> Bool {
         guard let model else { return false }
         let count = model.choices.count
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let background = mods.contains(.shift)
+        let remember = model.remembering
         // Shift is stripped too, so ⇧1 reads as "1" rather than "!".
         let chars = event.characters(byApplyingModifiers: [])?.lowercased() ?? ""
 
@@ -166,7 +186,7 @@ final class PickerController {
             dismiss()
             return true
         case 36, 76:  // return, keypad enter
-            choose(model.selection, inBackground: background)
+            choose(model.selection, inBackground: background, remember: remember)
             return true
         case 123:  // left
             model.selection = (model.selection - 1 + count) % count
@@ -189,12 +209,12 @@ final class PickerController {
                 dismiss()
                 return true
             default:
-                return false
+                break
             }
         }
 
         if let digit = Int(chars), (1...9).contains(digit), digit <= count {
-            choose(digit - 1, inBackground: background)
+            choose(digit - 1, inBackground: background, remember: remember)
             return true
         }
 
@@ -202,7 +222,7 @@ final class PickerController {
         if let letter = chars.first, letter.isLetter {
             let matches = model.choices.indices.filter { model.choices[$0].title.lowercased().first == letter }
             if matches.count == 1 {
-                choose(matches[0], inBackground: background)
+                choose(matches[0], inBackground: background, remember: remember)
             } else if !matches.isEmpty {
                 model.selection = matches.first { $0 > model.selection } ?? matches[0]
             }
@@ -211,10 +231,12 @@ final class PickerController {
         return false
     }
 
-    private func choose(_ index: Int, inBackground: Bool) {
+    private func choose(_ index: Int, inBackground: Bool, remember: Bool = false) {
         guard let model, let current, model.choices.indices.contains(index) else { return }
         let choice = model.choices[index]
         if settings.settings.rememberDomains { history.record(current.url, destination: choice.destination, picked: true) }
+        // Desktop-app entries have no rule action, so they are only ever opened.
+        if remember, choice.deepLink == nil { settings.settings.rules.remember(current.url, to: choice.target) }
         if let deepLink = choice.deepLink {
             browsers.openInApp(deepLink, bundleID: choice.browser.id)
             dismiss()
@@ -233,6 +255,7 @@ final class PickerController {
         self.panel = nil
         self.model = nil
         self.current = nil
+        rememberKeyBlocked = false
         panel.orderOut(nil)
         DispatchQueue.main.async { [weak self] in self?.showNext() }
     }
@@ -257,7 +280,7 @@ struct PickerView: View {
         return parts.joined(separator: ", ")
     }
 
-    private static let hint = "⏎ open  ·  ⇧ opens in background  ·  ⌘C copy link  ·  esc cancel"
+    private static let hint = "⏎ open  ·  ⇧ in background  ·  ⌘ always for this site  ·  ⌘C copy link  ·  esc cancel"
 
     /// The host in primary colour, the rest of the link (path, query) secondary.
     private static func styledLink(_ url: URL) -> Text {
@@ -275,8 +298,11 @@ struct PickerView: View {
                     Button {
                         model.onChoose(index, NSEvent.modifierFlags.contains(.shift))
                     } label: {
-                        ChoiceTile(choice: choice, shortcut: index < 9 ? index + 1 : nil, isSelected: index == model.selection, isHovered: index == model.hovered)
-                            .contentShape(Rectangle())
+                        ChoiceTile(
+                            choice: choice, shortcut: index < 9 ? index + 1 : nil, isSelected: index == model.selection,
+                            isHovered: index == model.hovered, remembering: model.remembering
+                        )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     // Keys are handled by the panel, so buttons must not take focus.
@@ -300,7 +326,11 @@ struct PickerView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: max(240, CGFloat(model.choices.count) * 84))
             }
-            if model.showFullHint {
+            if model.remembering, let domain = model.domain {
+                Label("Always open \(domain) with the one you pick", systemImage: "pin.fill")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+            } else if model.showFullHint {
                 Text(Self.hint)
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
@@ -323,6 +353,10 @@ private struct ChoiceTile: View {
     let shortcut: Int?
     let isSelected: Bool
     let isHovered: Bool
+    /// ⌘ is held: the highlighted tile shows a pin, and desktop-app tiles (which can't be remembered) fade.
+    var remembering = false
+
+    private var canRemember: Bool { choice.deepLink == nil }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -332,6 +366,15 @@ private struct ChoiceTile: View {
                 .overlay(alignment: .bottomTrailing) {
                     if let profile = choice.profile {
                         ProfileBadge(profile: profile, avatar: choice.avatar).offset(x: 4, y: 4)
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if remembering, canRemember, isSelected || isHovered {
+                        Image(systemName: "pin.circle.fill")
+                            .font(.system(size: 18))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, Color.accentColor)
+                            .offset(x: -4, y: -4)
                     }
                 }
             Text(choice.title)
@@ -350,6 +393,7 @@ private struct ChoiceTile: View {
                 .foregroundStyle(.secondary)
         }
         .padding(6)
+        .opacity(remembering && !canRemember ? 0.4 : 1)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(isSelected ? Color.accentColor.opacity(0.28) : isHovered ? Color.accentColor.opacity(0.12) : .clear)

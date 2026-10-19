@@ -220,6 +220,37 @@ extension Rule {
     }
 }
 
+extension Array where Element == Rule {
+    /// Makes `target` the browser for the link's whole domain, as picked with the remember key in the
+    /// picker. A rule that is just that domain is updated (and switched on); otherwise a new one goes
+    /// above the first rule that would catch the domain, so it takes effect. Returns the rule's id, or
+    /// nil for links without a domain.
+    @discardableResult
+    public mutating func remember(_ url: URL, to target: BrowserTarget) -> UUID? {
+        guard let domain = LinkAddress.of(url, depth: 0), !domain.isEmpty else { return nil }
+        let action = RuleAction.open(browserID: target.browserID, profileID: target.profileID)
+        if let i = firstIndex(where: { $0.isOnlyDomain(domain) }) {
+            self[i].action = action
+            self[i].isEnabled = true
+            return self[i].id
+        }
+        let rule = Rule.forAddress(domain, to: target)
+        let root = URL(string: "https://\(domain)/").map { LinkContext(url: $0) }
+        insert(rule, at: root.flatMap { root in firstIndex { $0.matches(root) } } ?? count)
+        return rule.id
+    }
+}
+
+extension Rule {
+    /// The rule has a single condition: Domain is `domain`.
+    func isOnlyDomain(_ domain: String) -> Bool {
+        guard conditions.count == 1, let c = conditions.first, c.field == .host,
+            c.op == .isDomain || c.op == .equals
+        else { return false }
+        return LinkAddress.normalize(c.value) == domain
+    }
+}
+
 public struct HistoryStore: Sendable {
     public let fileURL: URL
 

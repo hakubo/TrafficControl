@@ -5,6 +5,8 @@
 - Links that open in a Chrome (or other Chromium) profile reach the browser about twice as fast:
   TrafficControl starts the browser's executable directly instead of launching a new app instance.
 - Checking a browser's open tabs takes two AppleScript round trips instead of two per window.
+- Hold ⌘ while picking a browser to make it the rule for that site. The picker shows a pin and
+  "Always open <site> with the one you pick" while ⌘ is down.
 - `TIMING_LOGS=1 make app` builds a copy that logs how long each routing step takes.
 
 ## 0.2.0

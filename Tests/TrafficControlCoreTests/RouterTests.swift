@@ -487,6 +487,22 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         #expect(Rule.insertionIndex(for: "github.com", in: rules) == 2)
     }
 
+    @Test func rememberedPickUpdatesTheDomainRuleOrAddsOne() {
+        var rules = [Rule.forAddress("github.com/buffer", to: work), Rule.forAddress("example.com", to: nil)]
+        rules[1].isEnabled = false
+        // An existing rule for just the domain is reused and switched on.
+        let id = rules.remember(URL(string: "https://www.example.com/a?b")!, to: personal)
+        #expect(id == rules[1].id)
+        #expect(rules.count == 2 && rules[1].isEnabled && rules[1].action == .open(browserID: chrome, profileID: "Default"))
+        // A new domain rule goes below path rules for it but above a broader catch-all.
+        var catchAll = Rule(name: "everything", conditions: [Condition(field: .url, op: .contains, value: "http")])
+        catchAll.action = .ask
+        rules.append(catchAll)
+        rules.remember(URL(string: "https://github.com/apple/swift")!, to: personal)
+        #expect(rules.map(\.name) == ["github.com/buffer", "example.com", "github.com", "everything"])
+        #expect(rules.remember(URL(string: "mailto:a@b.c")!, to: personal) == nil)
+    }
+
     @Test func addressDepth() {
         let url = URL(string: "https://www.github.com/hakubo/TrafficControl/pulls")!
         #expect(LinkAddress.of(url, depth: 0) == "github.com")
