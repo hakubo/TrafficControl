@@ -41,9 +41,10 @@ TrafficControl updates itself: it checks daily and installs new versions (from 0
   `Local State` file on every click, so new ones appear straight away. A rule pointing at a deleted
   profile is skipped, because Chrome would otherwise create a new, empty profile with that name.
 - **Open in desktop apps**: web links that a desktop app can show are handed to that app, by default
-  only while it is running (configurable per app: when running, when installed, never). This happens before rules.
+  only while it is running (configurable per app: open always, open only if the app is open, never). This happens before rules.
   - Linear: workspace pages on linear.app (issues, projects, views, documents…) → `linear://…`, fragment kept
   - Notion: pages on notion.so → `notion://…`
+  - Figma: design, FigJam, Slides, Sites and Make files, prototypes, decks → `figma://…`
   - Zoom: meeting links `zoom.us/j/…` → `zoommtg://…`
   - Spotify: tracks, albums, artists, playlists, podcasts → `spotify:…`
 

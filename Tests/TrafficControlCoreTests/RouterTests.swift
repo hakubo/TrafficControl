@@ -309,6 +309,20 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
                 == "spotify:track:4uLU6hMCjMI75M1A2tKUQC")
     }
 
+    @Test func figmaOpensFilesOnly() {
+        #expect(
+            AppLink.figma.deepLink(URL(string: "https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/Web-App?node-id=12-34&t=x")!)?.absoluteString
+                == "figma://design/AbCdEfGhIjKlMnOpQrStUv/Web-App?node-id=12-34&t=x")
+        #expect(
+            AppLink.figma.deepLink(URL(string: "https://figma.com/board/AbCdEfGhIjKlMnOpQrStUv")!)?.absoluteString
+                == "figma://board/AbCdEfGhIjKlMnOpQrStUv")
+        #expect(AppLink.figma.deepLink(URL(string: "https://www.figma.com/pricing")!) == nil)
+        #expect(AppLink.figma.deepLink(URL(string: "https://www.figma.com/files/team/123/recents")!) == nil)
+        #expect(AppLink.figma.deepLink(URL(string: "https://www.figma.com/community/file/1234567890")!) == nil)
+        #expect(AppLink.figma.deepLink(URL(string: "https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/image/abc123")!) == nil)
+        #expect(AppLink.figma.deepLink(URL(string: "https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/X?openInBrowser=1")!) == nil)
+    }
+
     @Test func routesToAppOnlyWhenModeAllows() {
         var s = AppSettings()
         s.rules = [Rule(conditions: [Condition(field: .host, value: "linear.app")], action: .open(browserID: chrome))]

@@ -16,7 +16,7 @@ enum TrafficControlMain {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let settings = SettingsModel()
     let history = HistoryModel()
     let updater = UpdaterModel()
@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     lazy var router = LinkRouter(settings: settings, browsers: browsers, picker: picker, history: history)
 
     private var statusItem: NSStatusItem?
+    private var popover: NSPopover?
+    private let menuBar = MenuBarModel()
     private var settingsWindow: NSWindow?
     private var cancellables: Set<AnyCancellable> = []
     private var receivedLinkAtLaunch = false
@@ -70,17 +72,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private func updateStatusItem(visible: Bool) {
         if !visible {
+            popover?.close()
             if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
             statusItem = nil
             return
         }
         guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        let menu = NSMenu()
-        menu.delegate = self
-        // Items set isEnabled themselves (the clipboard item); auto-enabling would override it.
-        menu.autoenablesItems = false
-        item.menu = menu
+        item.button?.target = self
+        item.button?.action = #selector(togglePopover)
         statusItem = item
         updateStatusIcon(isDefault: defaultStatus.isDefault)
     }
@@ -99,31 +99,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         button.image = isDefault ? StatusIcon.template() : StatusIcon.withWarningDot()
     }
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
+    @objc private func togglePopover() {
+        if let popover, popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+        guard let button = statusItem?.button else { return }
         defaultStatus.refresh()
-        if !defaultStatus.isDefault {
-            let warning = menu.addItem(withTitle: "Links aren't coming to TrafficControl", action: nil, keyEquivalent: "")
-            warning.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(paletteColors: [.systemOrange]))
-            warning.isEnabled = false
-            if #available(macOS 14.4, *) {
-                warning.subtitle = "Another app is your default browser."
-            }
-            menu.addItem(withTitle: "Make TrafficControl the Default Browser", action: #selector(makeDefault), keyEquivalent: "").target = self
-            menu.addItem(.separator())
+        menuBar.override = activeOverride
+        detectClipboardURL()
+        let popover = popover ?? makePopover()
+        self.popover = popover
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // An accessory app's popover only takes keys (⌘, / ⌘Q) once its window is key.
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
+    private func makePopover() -> NSPopover {
+        menuBar.startOverride = { [weak self] target in
+            self?.setOverride(TemporaryOverride(target: target, until: Date().addingTimeInterval(60 * 60)))
         }
-        let clipboard = menu.addItem(withTitle: "Open Link from Clipboard", action: #selector(openClipboard), keyEquivalent: "")
-        clipboard.target = self
-        enableWhenClipboardHoldsURL(clipboard)
-        addOverrideItems(to: menu)
-        menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        if updater.isAvailable {
-            menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
-        }
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Buy Me a Coffee…", action: #selector(buyMeACoffee), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Quit TrafficControl", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menuBar.stopOverride = { [weak self] in self?.setOverride(nil) }
+        menuBar.openClipboard = { [weak self] in self?.closePopover { $0.openClipboard() } }
+        menuBar.makeDefault = { [weak self] in self?.defaultStatus.makeDefault() }
+        menuBar.showSettings = { [weak self] in self?.closePopover { $0.showSettings() } }
+        menuBar.checkForUpdates = { [weak self] in self?.closePopover { $0.updater.checkForUpdates() } }
+        menuBar.buyMeACoffee = { [weak self] in self?.closePopover { _ in NSWorkspace.shared.open(Links.buyMeACoffee) } }
+        let root = MenuBarPopover(model: menuBar)
+            .environmentObject(settings)
+            .environmentObject(browsers)
+            .environmentObject(history)
+            .environmentObject(updater)
+            .environmentObject(defaultStatus)
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        let host = NSHostingController(rootView: root)
+        host.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = host
+        return popover
+    }
+
+    private func closePopover(then action: (AppDelegate) -> Void) {
+        popover?.performClose(nil)
+        action(self)
     }
 
     // MARK: - Send All Links To
@@ -136,49 +155,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         date.formatted(date: .omitted, time: .shortened)
     }
 
-    /// A submenu of browsers (and profiles) that takes over routing for an hour, e.g. during a screen share.
-    private func addOverrideItems(to menu: NSMenu) {
-        let choices = browsers.orderedChoices(settings.settings, includeHidden: false)
-        guard !choices.isEmpty else { return }
-        let override = activeOverride
-        let submenu = NSMenu()
-        submenu.autoenablesItems = false
-        submenu.addItem(.sectionHeader(title: "For the Next Hour"))
-        for choice in choices {
-            let item = submenu.addItem(withTitle: choice.menuTitle, action: #selector(startOverride(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = choice.target
-            item.state = override?.target == choice.target ? .on : .off
-            let icon = (choice.avatar ?? choice.browser.icon).copy() as? NSImage
-            icon?.size = NSSize(width: 16, height: 16)
-            item.image = icon
-        }
-
-        let parent = menu.addItem(withTitle: "Send All Links To", action: nil, keyEquivalent: "")
-        parent.submenu = submenu
-        guard let override else { return }
-        let name = browsers.title(for: override.target)
-        parent.title = "Sending All Links to \(name)"
-        if #available(macOS 14.4, *) {
-            parent.subtitle = "Until \(Self.time(override.until))"
-        } else {
-            parent.title += " Until \(Self.time(override.until))"
-        }
-        menu.addItem(withTitle: "Stop Sending All Links to \(name)", action: #selector(stopOverride), keyEquivalent: "").target = self
-    }
-
-    @objc private func startOverride(_ sender: NSMenuItem) {
-        guard let target = sender.representedObject as? BrowserTarget else { return }
-        setOverride(TemporaryOverride(target: target, until: Date().addingTimeInterval(60 * 60)))
-    }
-
-    @objc private func stopOverride() {
-        setOverride(nil)
-    }
-
     /// The router checks the expiry itself; the timer only clears the menu bar icon and tooltip on time.
     private func setOverride(_ override: TemporaryOverride?) {
         router.override = override
+        menuBar.override = override
         overrideTimer?.invalidate()
         overrideTimer = nil
         if let override {
@@ -191,16 +171,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         updateStatusIcon(isDefault: defaultStatus.isDefault)
     }
 
-    /// Enables the item if the pasteboard probably holds a web URL, without reading its contents
-    /// (reading on every menu open can trigger macOS's paste-privacy alert).
-    private func enableWhenClipboardHoldsURL(_ item: NSMenuItem) {
-        guard #available(macOS 15.4, *) else { return }
-        item.isEnabled = false
-        nonisolated(unsafe) let item = item
+    /// Checks whether the pasteboard probably holds a web URL, without reading its contents
+    /// (reading on every popover open can trigger macOS's paste-privacy alert).
+    private func detectClipboardURL() {
+        guard #available(macOS 15.4, *) else {
+            menuBar.clipboardHasURL = true
+            return
+        }
+        menuBar.clipboardHasURL = false
+        let model = menuBar
         // The Swift overlay for this API isn't in this SDK, so call the refined ObjC entry point.
         NSPasteboard.general.__detectPatterns(forPatterns: [.__probableWebURL]) { patterns, _ in
             let found = patterns?.contains(.__probableWebURL) ?? false
-            DispatchQueue.main.async { item.isEnabled = found }
+            DispatchQueue.main.async { MainActor.assumeIsolated { model.clipboardHasURL = found } }
         }
     }
 
@@ -213,21 +196,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         return url
     }
 
-    @objc private func openClipboard() {
+    private func openClipboard() {
         guard let url = clipboardURL else { return }
         picker.enqueue(PickerRequest(url: url, sourceApp: nil))
-    }
-
-    @objc private func checkForUpdates() {
-        updater.checkForUpdates()
-    }
-
-    @objc private func buyMeACoffee() {
-        NSWorkspace.shared.open(Links.buyMeACoffee)
-    }
-
-    @objc private func makeDefault() {
-        defaultStatus.makeDefault()
     }
 
     @objc func showSettings() {
