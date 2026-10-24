@@ -17,6 +17,8 @@ struct RulesSettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            linkTester
+            Divider()
             HSplitView {
                 VStack(spacing: 0) {
                     Picker("", selection: $pane) {
@@ -41,30 +43,78 @@ struct RulesSettingsView: View {
                 }
                 .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
             }
-            Divider()
-            HStack {
-                TextField("Try a link, e.g. https://github.com/apple/swift", text: $testURL)
-                    .textFieldStyle(.roundedBorder)
-                Text(testResult).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                if let url = testedURL {
-                    Menu("Create Rule") {
-                        ForEach(ruleScopes(for: url), id: \.self) { address in
-                            Button(address) { createRule(address: address, target: suggestedTarget(for: url)) }
-                        }
-                    }
-                    .fixedSize()
-                    .help("Make a rule for this link's domain or one of its paths")
-                }
-            }
-            .padding(10)
         }
+    }
+
+    /// Paste a link to see where it would go; the rule that catches it lights up in the list.
+    private var linkTester: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "link")
+                .foregroundStyle(.secondary)
+            // ⌥⏎ would insert a line break; a link is always one line.
+            TextField(
+                "Try a link, e.g. https://github.com/apple/swift",
+                text: Binding(get: { testURL }, set: { testURL = $0.filter { !$0.isNewline } })
+            )
+            .textFieldStyle(.plain)
+            .lineLimit(1)
+            if !testResult.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                    if let icon = testedDestinationIcon { icon }
+                    Text(testResult).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .transition(.opacity)
+            }
+            // A rule already catches this link: edit that one instead of adding another.
+            if let url = testedURL, matchedRuleID == nil {
+                Menu("Create Rule") {
+                    ForEach(ruleScopes(for: url), id: \.self) { address in
+                        Button(address) { createRule(address: address, target: suggestedTarget(for: url)) }
+                    }
+                }
+                .fixedSize()
+                .help("Make a rule for this link's domain or one of its paths")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary.opacity(0.5)))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+        .padding(10)
+        .animation(.easeOut(duration: 0.15), value: testResult)
+    }
+
+    /// The rule the tested link would hit, so its row can be highlighted.
+    private var matchedRuleID: Rule.ID? {
+        guard let url = testedURL else { return nil }
+        return Router.firstMatchingRule(LinkContext(url: url), in: model.settings.rules)?.id
+    }
+
+    /// The browser the tested link would open in, when a rule sends it to one.
+    private var testedDestinationIcon: AnyView? {
+        guard let url = testedURL, let rule = Router.firstMatchingRule(LinkContext(url: url), in: model.settings.rules),
+            case .open(let id, let profileID) = rule.action, let browser = browsers.browser(withID: id)
+        else { return nil }
+        let profile = profileID.flatMap { p in browsers.profiles[id]?.first { $0.id == p } }
+        return AnyView(
+            BrowserIcon(
+                browser: browser, hasProfile: profileID != nil,
+                avatar: ImageCache.avatar(atPath: profile?.avatarPath), size: 16))
     }
 
     private var rulesList: some View {
         VStack(spacing: 0) {
             List(selection: $selection) {
                 ForEach($model.settings.rules) { $rule in
-                    RuleRow(rule: $rule).tag(rule.id)
+                    RuleRow(
+                        rule: $rule,
+                        number: (model.settings.rules.firstIndex { $0.id == rule.id } ?? 0) + 1,
+                        isMatch: rule.id == matchedRuleID
+                    )
+                    .tag(rule.id)
                 }
                 .onMove { model.settings.rules.move(fromOffsets: $0, toOffset: $1) }
             }
@@ -214,10 +264,20 @@ struct RulesSettingsView: View {
 /// A rule in the list: where it sends links (as an icon), its name, what it matches, and an on/off switch.
 private struct RuleRow: View {
     @Binding var rule: Rule
+    /// Its place in the list: rules are tried top to bottom.
+    let number: Int
+    /// The link in the tester at the top lands on this rule.
+    var isMatch = false
     @EnvironmentObject private var browsers: BrowserManager
 
     var body: some View {
         HStack(spacing: 10) {
+            Text("\(number)")
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(isMatch ? AnyShapeStyle(.white) : AnyShapeStyle(.tertiary))
+                .frame(minWidth: 18, minHeight: 18)
+                .background(Circle().fill(isMatch ? Color.accentColor : .clear))
+                .help(isMatch ? "The link you're trying matches this rule first" : "Rules are tried top to bottom")
             destinationIcon
                 .help(destinationTitle)
             VStack(alignment: .leading, spacing: 1) {

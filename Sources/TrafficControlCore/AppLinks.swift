@@ -2,14 +2,14 @@ import Foundation
 
 /// When to send a web link to the matching desktop app instead of a browser.
 public enum AppLinkMode: String, Codable, CaseIterable, Sendable, Hashable {
-    case whenRunning
     case whenInstalled
+    case whenRunning
     case never
 
     public var label: String {
         switch self {
-        case .whenRunning: "When the app is running"
-        case .whenInstalled: "Whenever the app is installed"
+        case .whenInstalled: "Open always"
+        case .whenRunning: "Open only if app is open"
         case .never: "Never"
         }
     }
@@ -26,7 +26,7 @@ public struct AppLink: Identifiable, Sendable {
 }
 
 extension AppLink {
-    public static let all: [AppLink] = [linear, notion, zoom, spotify]
+    public static let all: [AppLink] = [linear, notion, figma, zoom, spotify]
 
     public static func first(for url: URL) -> (AppLink, URL)? {
         for app in all {
@@ -59,6 +59,19 @@ extension AppLink {
             parts.path.range(of: "[0-9a-f]{32}$", options: .regularExpression) != nil
         else { return nil }
         return URL(string: "notion://www.notion.so" + parts.path + parts.suffix)
+    }
+
+    /// The app rewrites figma://<path> to https://www.figma.com/<path>, and drops links it can't show,
+    /// so only file links go there; the file browser, community and image exports stay in the browser.
+    public static let figma = AppLink(
+        id: "figma", name: "Figma", bundleID: "com.figma.Desktop",
+        summary: "Design, FigJam, Slides, Sites and Make files, prototypes and decks"
+    ) { url in
+        guard let parts = webParts(url, hosts: ["figma.com", "www.figma.com"]),
+            parts.path.firstMatch(of: #/^\/(file|design|board|slides|site|buzz|make|proto|deck)\/[0-9a-zA-Z]{22,128}(\/|$)/#) != nil,
+            !parts.path.contains("/image/"), !parts.suffix.contains("openInBrowser")
+        else { return nil }
+        return URL(string: "figma://" + parts.path.dropFirst() + parts.suffix)
     }
 
     public static let zoom = AppLink(

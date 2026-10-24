@@ -1,7 +1,21 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
+- A fresh look. The picker shows the link's site and the app it came from above larger browser tiles,
+  with keycaps for each shortcut. Holding ⌘ pins the browser under the cursor and names the rule it
+  will save, without the window jumping.
+- The menu bar icon opens a popover instead of a menu: whether links are reaching TrafficControl,
+  one-click "Send All Links To" with a countdown and Stop button, Open Link from Clipboard, your
+  three most recent sites, and Settings, Updates and Quit.
+- Settings → General opens with a status card: whether TrafficControl is your default browser, how
+  many links it has opened and across how many sites. The sidebar groups panes and shows how many
+  browsers and rules you have.
+- Settings → Rules: the link tester sits above the rules, shows the browser a link would open in and
+  highlights the rule that catches it. Create Rule only appears when no rule matches yet, and ⌥⏎ no
+  longer adds a line break.
+- Figma links (design, FigJam, Slides, prototypes…) open in the Figma desktop app.
+- Settings → Apps options now read "Open always", "Open only if app is open" and "Never".
 - Links that open in a Chrome (or other Chromium) profile reach the browser about twice as fast:
   TrafficControl starts the browser's executable directly instead of launching a new app instance.
 - Checking a browser's open tabs takes two AppleScript round trips instead of two per window.

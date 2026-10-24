@@ -5,44 +5,31 @@ struct GeneralSettingsView: View {
     @EnvironmentObject private var model: SettingsModel
     @EnvironmentObject private var browsers: BrowserManager
     @EnvironmentObject private var defaultStatus: DefaultBrowserStatus
+    @EnvironmentObject private var history: HistoryModel
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginNeedsApproval = LoginItem.needsApproval
+
+    private var linkCount: Int { history.history.records.values.reduce(0) { $0 + $1.visits } }
 
     var body: some View {
         Form {
             Section {
-                PaneHeader(
-                    title: "TrafficControl",
-                    message: defaultStatus.isDefault
-                        ? "Every link you click passes through here and goes to the right place."
-                        : "TrafficControl only sees links once it is your default browser."
-                ) {
-                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
-                } accessory: {
-                    VStack(spacing: 12) {
-                        if defaultStatus.isDefault {
-                            Label("Default browser", systemImage: "checkmark.circle.fill")
-                                .font(.callout.weight(.medium))
-                                .foregroundStyle(.green)
-                        } else {
-                            Button("Make Default Browser") {
-                                defaultStatus.makeDefault()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                        }
-                        HStack(spacing: 6) {
-                            Text("Version \(appVersion)")
-                            Text("·")
-                            Button("Website") { NSWorkspace.shared.open(Links.website) }
-                            Text("·")
-                            Button("GitHub") { NSWorkspace.shared.open(Links.repository) }
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .buttonStyle(.link)
-                    }
+                StatusHero(isDefault: defaultStatus.isDefault, links: linkCount, sites: history.history.records.count) {
+                    defaultStatus.makeDefault()
                 }
+                .listRowInsets(EdgeInsets())
+            } footer: {
+                HStack(spacing: 6) {
+                    Text("Version \(appVersion)")
+                    Text("·")
+                    Button("Website") { NSWorkspace.shared.open(Links.website) }
+                    Text("·")
+                    Button("GitHub") { NSWorkspace.shared.open(Links.repository) }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .buttonStyle(.link)
+                .frame(maxWidth: .infinity)
             }
 
             Section {
@@ -154,6 +141,87 @@ struct GeneralSettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             launchAtLogin = LoginItem.isEnabled
             loginNeedsApproval = LoginItem.needsApproval
+        }
+    }
+}
+
+/// The top of the General pane, in the app icon's colors: night-sky navy, radar rings and the amber cab light.
+/// Says whether links reach TrafficControl, and how many it has handled.
+private struct StatusHero: View {
+    let isDefault: Bool
+    let links: Int
+    let sites: Int
+    let makeDefault: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 56, height: 56)
+                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(isDefault ? "Every link goes through TrafficControl" : "Links aren't reaching TrafficControl")
+                    .font(.system(size: 15, weight: .semibold))
+                if isDefault {
+                    Label("Default browser", systemImage: "checkmark.circle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.white.opacity(0.75))
+                } else {
+                    HStack(spacing: 10) {
+                        Text("Another app is your default browser.")
+                            .font(.callout)
+                            .foregroundStyle(.white.opacity(0.75))
+                        Button("Make Default Browser", action: makeDefault)
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
+                            .controlSize(.small)
+                    }
+                }
+            }
+            Spacer(minLength: 12)
+            if isDefault, links > 0 {
+                HStack(spacing: 18) {
+                    stat(links, "links opened")
+                    stat(sites, sites == 1 ? "site" : "sites")
+                }
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background { background }
+    }
+
+    private func stat(_ value: Int, _ label: String) -> some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(value, format: .number)
+                .font(.system(size: 20, weight: .semibold).monospacedDigit())
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.6))
+        }
+        .fixedSize()
+    }
+
+    private var background: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Color(red: 0.15, green: 0.22, blue: 0.42), Color(red: 0.06, green: 0.10, blue: 0.22)],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
+            // Radar rings sweeping out from the top-right corner, as on the icon.
+            GeometryReader { proxy in
+                let center = CGPoint(x: proxy.size.width - 30, y: 10)
+                ForEach(1..<7) { ring in
+                    Circle()
+                        .stroke(.white.opacity(0.06), lineWidth: 1)
+                        .frame(width: CGFloat(ring) * 56, height: CGFloat(ring) * 56)
+                        .position(center)
+                }
+            }
+            RadialGradient(
+                colors: [(isDefault ? Color.amber : .orange).opacity(0.45), .clear],
+                center: .topTrailing, startRadius: 0, endRadius: 220)
         }
     }
 }

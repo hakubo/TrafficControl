@@ -11,6 +11,7 @@ struct PickerRequest {
 final class PickerModel: ObservableObject {
     let url: URL
     let sourceName: String?
+    let sourceIcon: NSImage?
     let choices: [BrowserChoice]
     let showURL: Bool
     @Published var selection: Int
@@ -25,9 +26,18 @@ final class PickerModel: ObservableObject {
     /// "github.com", the part of the link a remembered pick applies to.
     var domain: String? { LinkAddress.of(url, depth: 0) }
 
-    init(url: URL, sourceName: String?, choices: [BrowserChoice], showURL: Bool, selection: Int) {
+    /// The entry a ⌘-click or ⌘-Return would remember: the hovered tile, else the selected one.
+    var rememberTarget: BrowserChoice? {
+        let index = hovered ?? selection
+        return choices.indices.contains(index) ? choices[index] : nil
+    }
+
+    init(
+        url: URL, sourceName: String?, sourceIcon: NSImage?, choices: [BrowserChoice], showURL: Bool, selection: Int
+    ) {
         self.url = url
         self.sourceName = sourceName
+        self.sourceIcon = sourceIcon
         self.choices = choices
         self.showURL = showURL
         self.selection = selection
@@ -118,7 +128,7 @@ final class PickerController {
             initial = lastActive ?? primary ?? 0
         }
         let model = PickerModel(
-            url: request.url, sourceName: request.sourceApp?.localizedName,
+            url: request.url, sourceName: request.sourceApp?.localizedName, sourceIcon: request.sourceApp?.icon,
             choices: list, showURL: s.showURLInPicker, selection: initial)
         // The full hint line is only shown for the first few opens, then it moves behind a "?" tooltip.
         let hintCount = UserDefaults.standard.integer(forKey: "pickerHintShownCount")
@@ -281,18 +291,29 @@ struct PickerView: View {
     }
 
     private static let hint = "⏎ open  ·  ⇧ in background  ·  ⌘ always for this site  ·  ⌘C copy link  ·  esc cancel"
+    private static let hintKeys: [(key: String, label: String?)] = [
+        ("⏎", "Open"), ("⇧", "Background"), ("⌘", "Always"), ("⌘C", "Copy"), ("esc", nil),
+    ]
 
-    /// The host in primary colour, the rest of the link (path, query) secondary.
+    /// The host in primary colour and semibold, the rest of the link (scheme, path, query) secondary.
     private static func styledLink(_ url: URL) -> Text {
-        let full = url.absoluteString
+        // The lock already says https, so the scheme is dropped.
+        let full = url.absoluteString.replacingOccurrences(of: "https://", with: "", options: .anchored)
         guard let host = url.host, let range = full.range(of: host) else { return Text(full) }
         return Text(full[..<range.lowerBound]).foregroundColor(.secondary)
-            + Text(host).foregroundColor(.primary)
+            + Text(host).foregroundColor(.primary).fontWeight(.semibold)
             + Text(full[range.upperBound...]).foregroundColor(.secondary)
     }
 
+    private var tilesWidth: CGFloat { CGFloat(model.choices.count) * 88 - 4 }
+
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 0) {
+            if model.showURL {
+                linkChip
+                    .frame(width: max(tilesWidth, 300))
+                    .padding(.bottom, 10)
+            }
             HStack(spacing: 4) {
                 ForEach(Array(model.choices.enumerated()), id: \.element.id) { index, choice in
                     Button {
@@ -300,7 +321,9 @@ struct PickerView: View {
                     } label: {
                         ChoiceTile(
                             choice: choice, shortcut: index < 9 ? index + 1 : nil, isSelected: index == model.selection,
-                            isHovered: index == model.hovered, remembering: model.remembering
+                            isHovered: index == model.hovered,
+                            isPinned: model.remembering && index == (model.hovered ?? model.selection),
+                            remembering: model.remembering
                         )
                         .contentShape(Rectangle())
                     }
@@ -312,39 +335,118 @@ struct PickerView: View {
                     .accessibilityAddTraits(index == model.selection ? .isSelected : [])
                 }
             }
-            if model.showURL {
-                VStack(spacing: 2) {
-                    Self.styledLink(model.url)
-                        .font(.system(size: 11))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(model.url.absoluteString)
-                    if let source = model.sourceName {
-                        Text("from \(source)").font(.system(size: 10)).foregroundStyle(.tertiary)
-                    }
-                }
+            footer.padding(.top, 9)
+        }
+        .padding(12)
+        .background(VisualEffectBackground())
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
+        .animation(.easeOut(duration: 0.12), value: model.selection)
+        .animation(.easeOut(duration: 0.12), value: model.hovered)
+        .animation(.easeOut(duration: 0.15), value: model.remembering)
+    }
+
+    /// The link and the app it came from, so you see where it goes before you choose.
+    private var linkChip: some View {
+        HStack(spacing: 7) {
+            Image(systemName: model.url.scheme == "https" ? "lock.fill" : "globe")
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: max(240, CGFloat(model.choices.count) * 84))
-            }
-            if model.remembering, let domain = model.domain {
-                Label("Always open \(domain) with the one you pick", systemImage: "pin.fill")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-            } else if model.showFullHint {
-                Text(Self.hint)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-            } else {
-                Image(systemName: "questionmark.circle")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .help(Self.hint)
+            Self.styledLink(model.url)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(model.url.absoluteString)
+            Spacer(minLength: 8)
+            if let source = model.sourceName {
+                HStack(spacing: 5) {
+                    if let icon = model.sourceIcon {
+                        Image(nsImage: icon).resizable().frame(width: 14, height: 14)
+                    }
+                    Text("from \(source)")
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize()
             }
         }
-        .padding(14)
-        .background(VisualEffectBackground())
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.12)))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.primary.opacity(0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
+    }
+
+    /// The hint row and the ⌘ banner share one fixed slot, so holding ⌘ never resizes the picker.
+    /// The banner is an overlay: its text follows the hovered tile, and it must not change the width either.
+    private var footer: some View {
+        hints
+            .opacity(model.remembering ? 0 : 1)
+            .frame(minWidth: 300, maxWidth: .infinity, minHeight: 26, maxHeight: 26)
+            .overlay { rememberBanner.opacity(model.remembering ? 1 : 0) }
+    }
+
+    @ViewBuilder
+    private var hints: some View {
+        if model.showFullHint {
+            HStack(spacing: 12) {
+                ForEach(Self.hintKeys, id: \.key) { hint in
+                    HStack(spacing: 4) {
+                        Keycap(text: hint.key)
+                        if let label = hint.label { Text(label) }
+                    }
+                }
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .top) { Rectangle().fill(.primary.opacity(0.08)).frame(height: 0.5) }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.hint)
+        } else {
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .help(Self.hint)
+        }
+    }
+
+    private var rememberBanner: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "pin.fill")
+            let domain = Text(model.domain ?? "this site").fontWeight(.semibold)
+            if let target = model.rememberTarget, target.deepLink == nil {
+                Text("Always open ") + domain + Text(" in \(target.menuTitle)")
+            } else {
+                Text("Always open ") + domain + Text(" with the one you pick")
+            }
+        }
+        .font(.system(size: 11.5, weight: .medium))
+        .foregroundStyle(Color.amber)
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.amber.opacity(0.14)))
+        .accessibilityHidden(!model.remembering)
+    }
+}
+
+/// A key drawn as a small keycap: "2", "⏎", "⌘C".
+private struct Keycap: View {
+    let text: String
+    var isHighlighted = false
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+            .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            .padding(.horizontal, 4)
+            .frame(minWidth: 17, minHeight: 17)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(isHighlighted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.primary.opacity(0.1)))
+                    .shadow(color: .black.opacity(isHighlighted ? 0 : 0.2), radius: 0, y: 0.5)
+            )
     }
 }
 
@@ -353,13 +455,15 @@ private struct ChoiceTile: View {
     let shortcut: Int?
     let isSelected: Bool
     let isHovered: Bool
-    /// ⌘ is held: the highlighted tile shows a pin, and desktop-app tiles (which can't be remembered) fade.
+    /// ⌘ is held and this is the tile a click or Return would remember: the hovered one, else the selected one.
+    var isPinned = false
+    /// ⌘ is held: desktop-app tiles (which can't be remembered) fade.
     var remembering = false
 
     private var canRemember: Bool { choice.deepLink == nil }
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 3) {
             Image(nsImage: choice.browser.icon)
                 .resizable()
                 .frame(width: 56, height: 56)
@@ -368,37 +472,55 @@ private struct ChoiceTile: View {
                         ProfileBadge(profile: profile, avatar: choice.avatar).offset(x: 4, y: 4)
                     }
                 }
-                .overlay(alignment: .topLeading) {
-                    if remembering, canRemember, isSelected || isHovered {
-                        Image(systemName: "pin.circle.fill")
-                            .font(.system(size: 18))
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, Color.accentColor)
-                            .offset(x: -4, y: -4)
-                    }
-                }
             Text(choice.title)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 11.5, weight: .medium))
                 .lineLimit(1)
-                .frame(width: 72)
-            if choice.profile != nil || choice.deepLink != nil {
-                Text(choice.deepLink != nil ? "Desktop app" : choice.browser.name)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .frame(width: 72)
-            }
-            Text(shortcut.map(String.init) ?? " ")
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: 76)
+                .padding(.top, 4)
+            Text(choice.deepLink != nil ? "Desktop app" : choice.profile != nil ? choice.browser.name : " ")
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: 76)
+            if let shortcut {
+                Keycap(text: String(shortcut), isHighlighted: isSelected).padding(.top, 4)
+            }
         }
-        .padding(6)
-        .opacity(remembering && !canRemember ? 0.4 : 1)
+        .padding(.horizontal, 4)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .opacity(remembering && !canRemember ? 0.35 : 1)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.28) : isHovered ? Color.accentColor.opacity(0.12) : .clear)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.24) : isHovered ? Color.primary.opacity(0.06) : .clear)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(isSelected ? 0.7 : 0), lineWidth: 1)
+        )
+        .overlay(alignment: .topLeading) {
+            if isPinned, canRemember {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.black.opacity(0.75))
+                    .frame(width: 18, height: 18)
+                    .background(Circle().fill(Color.amber))
+                    .shadow(color: .black.opacity(0.3), radius: 1.5, y: 1)
+                    .offset(x: 6, y: 5)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
     }
+}
+
+extension Color {
+    /// The amber of the app icon's control-tower cab, for the "remember this pick" state.
+    static let amber = Color(
+        nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(srgbRed: 1, green: 0.70, blue: 0.25, alpha: 1)
+                : NSColor(srgbRed: 0.78, green: 0.47, blue: 0, alpha: 1)
+        })
 }
 
 /// The profile's account picture, or its initial on a color derived from the profile directory.
