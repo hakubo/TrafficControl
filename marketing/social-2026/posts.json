@@ -1,0 +1,82 @@
+[
+  {
+    "week": 1,
+    "dueAt": "2026-11-03T09:30:00+01:00",
+    "image": "week-01.png",
+    "alt": "TrafficControl card: 'Every link, cleared for the right browser.' Four flight strips show where links go: linear.app to the Linear app, docs.google.com to an already open tab, github.com/acme to Chrome Work by rule, news.ycombinator.com to the picker.",
+    "linkedin": "I have three browsers and four Chrome profiles, and for years every link I clicked opened in the wrong one.\n\nSo I built TrafficControl, a small macOS menu bar app that becomes your default browser and decides where each link should go:\n\n→ Linear, Notion, Figma, Zoom and Spotify links open in their desktop apps\n→ a page you already have open brings that tab forward\n→ your rules send work links to the work profile\n→ anything else shows a picker right at your cursor\n\nIt's free and open source. For the next few weeks I'll post one feature a week.\n\nhttps://hakubo.github.io/TrafficControl/",
+    "threads": "I have three browsers and four Chrome profiles, and every link I clicked opened in the wrong one.\n\nSo I built TrafficControl: a free macOS app that becomes your default browser and sends each link to the right browser, profile or desktop app.\n\nOne feature a week for the next 10 weeks. Starting here:\nhttps://hakubo.github.io/TrafficControl/"
+  },
+  {
+    "week": 2,
+    "dueAt": "2026-11-10T09:30:00+01:00",
+    "image": "week-02.png",
+    "alt": "TrafficControl card: 'Work and personal, kept apart.' A browser picker for a calendar.google.com link clicked in Slack, offering Chrome Work, Chrome Personal, Safari and Firefox, numbered 1 to 4.",
+    "linkedin": "Click a Google Calendar link in Slack. Which Chrome profile opens it? Usually whichever window you touched last, so half the time it's the wrong Google account.\n\nTrafficControl treats every Chrome profile as its own browser. The picker shows one entry per profile, with its account picture, and rules can target a profile directly.\n\nSame for Brave, Edge, Vivaldi, Chromium and the Chrome betas. New profiles show up the moment you create them.\n\nFree for macOS: https://hakubo.github.io/TrafficControl/",
+    "threads": "Click a Google Calendar link in Slack and it opens in whichever Chrome profile you touched last. Wrong account, every time.\n\nTrafficControl lists each Chrome profile as its own choice, with its account picture, and rules can point at a specific profile. Brave, Edge and Vivaldi too.\n\nhttps://hakubo.github.io/TrafficControl/"
+  },
+  {
+    "week": 3,
+    "dueAt": "2026-11-17T09:30:00+01:00",
+    "image": "week-03.png",
+    "alt": "TrafficControl card: 'Set it once. Never think about it again.' Four rule strips: github.com/acme to Chrome Work, github.com/you to Chrome Personal, any link from Slack to Chrome Work, Command-click anywhere to Safari.",
+    "linkedin": "The rule I use most: github.com/buffer goes to my work profile, github.com/hakubo goes to my personal one. Same domain, different browser, decided by the path.\n\nTrafficControl rules can look at:\n• the domain and path\n• the full URL\n• the app you clicked in (everything from Slack → work)\n• keys you held (⌘-click → Safari)\n\nMatch with is, contains, wildcards or regex. Rules run top to bottom, the first match wins, and a live tester shows which rule a URL would hit before you save.\n\nhttps://hakubo.github.io/TrafficControl/",
+    "threads": "My most used rule: github.com/buffer → work profile, github.com/hakubo → personal. Same domain, split by path.\n\nTrafficControl rules can also match the app you clicked in (Slack → work) or keys you held (⌘-click → Safari). Wildcards and regex if you want them.\n\nhttps://hakubo.github.io/TrafficControl/"
+  },
+  {
+    "week": 4,
+    "dueAt": "2026-11-24T09:30:00+01:00",
+    "image": "week-04.png",
+    "alt": "TrafficControl card: 'Linear links open in Linear.' Links to linear.app, notion.so, figma.com, zoom.us and open.spotify.com each routed to its desktop app.",
+    "linkedin": "Someone pastes a Linear issue in Slack. You click it. A browser tab opens, you sign in, and then you open the same issue in the Linear app you already had running.\n\nTrafficControl skips that. Web links that a desktop app can show go straight to the app:\n\n• Linear issues, projects and docs\n• Notion pages\n• Figma designs, FigJam boards, Slides and prototypes\n• Zoom meetings\n• Spotify tracks, albums and playlists\n\nBy default only while the app is running, so you're never forced into an app you didn't open. You can change that per app.\n\nhttps://hakubo.github.io/TrafficControl/",
+    "threads": "Linear link in Slack → browser tab → sign in → open it in the Linear app anyway.\n\nTrafficControl sends Linear, Notion, Figma, Zoom and Spotify links straight to their desktop apps, by default only when the app is already running.\n\nhttps://hakubo.github.io/TrafficControl/"
+  },
+  {
+    "week": 5,
+    "dueAt": "2026-12-01T09:30:00+01:00",
+    "image": "week-05.png",
+    "alt": "TrafficControl card: 'Already open? That tab comes forward.' A Google Docs link with utm tracking and a GitHub pull request link with www and #files both routed to the tab that is already open.",
+    "linkedin": "How many copies of the same Google Doc do you have open right now?\n\nBefore TrafficControl opens a link, it checks your running browsers for a tab that already shows that page. If there is one, it brings that tab forward instead of opening another.\n\nIt doesn't care about http vs https, www., a trailing slash, the #anchor or tracking parameters like utm_source, so the link from the newsletter matches the tab you already have.\n\nWorks with Safari, Chrome, Brave, Edge, Vivaldi and Chromium. macOS asks once per browser for permission.\n\nhttps://hakubo.github.io/TrafficControl/",
+    "threads": "How many copies of the same Google Doc do you have open right now?\n\nTrafficControl checks your open tabs first and switches to the one you have, ignoring www., #anchors and utm_ junk. Safari and Chromium browsers.\n\nhttps://hakubo.github.io/TrafficControl/"
+  },
+  {
+    "week": 6,
+    "dueAt": "2026-12-08T09:30:00+01:00",
+    "image": "week-06.png",
+    "alt": "TrafficControl card: 'Choose a browser without the mouse.' Picker shortcuts: 1 to 9 opens that browser, a first letter jumps to it, hold Shift to open in the background, hold Command to save as the site's rule, Command-C copies the link, Escape cancels.",
+    "linkedin": "When no rule matches, TrafficControl shows a picker right where your mouse is. It's built to be used from the keyboard:\n\n1–9 opens that browser\nC jumps to Chrome (first letter of any browser)\n⇧ held opens it in the background\n⌘ held saves your pick as a rule for the site\n⌘C copies the link instead\nEsc cancels\n\nThe app you clicked in stays in front, so you can keep reading the Slack thread while the link loads behind it.\n\nhttps://hakubo.github.io/TrafficControl/",
+    "threads": "TrafficControl's picker, keyboard edition:\n\n1–9 → open in that browser\nfirst letter → jump to it\n⇧ → open in the background\n⌘ → save as this site's rule\n⌘C → copy the link\nEsc → cancel\n\nhttps://hakubo.github.io/TrafficControl/"
+  },
+  {
+    "week": 7,
+    "dueAt": "2026-12-15T09:30:00+01:00",
+    "image": "week-07.png",
+    "alt": "TrafficControl card: 'Pick once. It's a rule now.' The picker for a figma.com link with Chrome Work selected and pinned, and the hint 'Always open figma.com with the one you pick'.",
+    "linkedin": "Nobody wants to sit down and write browser rules. So TrafficControl learns them from you.\n\nHold ⌘ while you pick a browser and that choice becomes the rule for the site. The picker shows a pin and tells you exactly what it will save.\n\nIt also keeps a short history of the domains you open and where they went. Next time, your usual choice is already selected, and Settings → History turns any domain into a rule with one click.\n\nThe history is a JSON file on your Mac. It never leaves it, and you can switch it off.\n\nhttps://hakubo.github.io/TrafficControl/",
+    "threads": "Nobody wants to write browser rules by hand.\n\nIn TrafficControl, hold ⌘ while picking a browser and it becomes the rule for that site. History also preselects your usual choice per domain. All stored locally.\n\nhttps://hakubo.github.io/TrafficControl/"
+  },
+  {
+    "week": 8,
+    "dueAt": "2026-12-22T09:30:00+01:00",
+    "image": "week-08.png",
+    "alt": "TrafficControl card: 'Presenting? Send every link to one browser.' A menu bar timer reading 'Send all links to Chrome Work', 59:42 remaining, with a Stop button.",
+    "linkedin": "Screen sharing, you click a link in chat, and it opens in your personal browser with all your tabs on display.\n\nTrafficControl has a fix for that. Open the menu bar popover, choose \"Send All Links To\" and pick a browser or profile. For the next hour every link goes there, with a countdown and a Stop button. Holding ⇧ still gets you the picker if you need it.\n\nhttps://hakubo.github.io/TrafficControl/",
+    "threads": "Screen sharing, click a link, and up pops your personal browser with every tab on show.\n\nTrafficControl: menu bar → Send All Links To → pick one browser. Everything goes there for an hour.\n\nhttps://hakubo.github.io/TrafficControl/"
+  },
+  {
+    "week": 9,
+    "dueAt": "2026-12-29T09:30:00+01:00",
+    "image": "week-09.png",
+    "alt": "TrafficControl card: 'Five checks, in this order.' 1 Desktop app, 2 Open tab, 3 Your rules, 4 Default, 5 Picker.",
+    "linkedin": "What happens between clicking a link and seeing the page? With TrafficControl, five checks, in this order:\n\n1. Desktop app: is it a Linear, Notion, Figma, Zoom or Spotify link, and is the app running?\n2. Open tab: is the page already open somewhere?\n3. Your rules: first match wins\n4. Default: your primary browser, the only one running, or the last one you used\n5. Picker: anything left appears at your cursor\n\nHold ⇧ while clicking to skip straight to the picker.\n\nhttps://hakubo.github.io/TrafficControl/",
+    "threads": "Every link you click goes through five checks in TrafficControl:\n\n1. Desktop app\n2. Already open tab\n3. Your rules\n4. Default browser\n5. Picker at your cursor\n\nFirst one that knows where the link belongs wins.\n\nhttps://hakubo.github.io/TrafficControl/"
+  },
+  {
+    "week": 10,
+    "dueAt": "2027-01-05T09:30:00+01:00",
+    "image": "week-10.png",
+    "alt": "TrafficControl card: 'Up and running in a minute.' A terminal showing 'brew install --cask hakubo/tap/trafficcontrol' and three checks: free and open source, updates itself, no accounts and no tracking.",
+    "linkedin": "Last post in the TrafficControl series. If your links still open in the wrong browser, here's the install:\n\nbrew install --cask hakubo/tap/trafficcontrol\n\nOr download the DMG from the site. Then click Make Default in Settings.\n\nIt's free and open source, updates itself, and needs no account. Settings and history stay on your Mac.\n\nIf you want something more powerful, Choosy is the app that inspired it. If TrafficControl saves you some tab juggling, I'd love to hear what rules you set up.\n\nhttps://hakubo.github.io/TrafficControl/\nhttps://github.com/hakubo/TrafficControl",
+    "threads": "Last one in the series. If your links still open in the wrong browser:\n\nbrew install --cask hakubo/tap/trafficcontrol\n\nFree, open source, updates itself, no account. Tell me what rules you end up with.\n\nhttps://hakubo.github.io/TrafficControl/"
+  }
+]
