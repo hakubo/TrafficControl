@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - Links that open in a Chrome (or other Chromium) profile go straight to the running browser over its
   singleton socket instead of starting the browser's executable. They used to take seconds once
