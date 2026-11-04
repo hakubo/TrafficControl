@@ -32,12 +32,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var cancellables: Set<AnyCancellable> = []
     private var receivedLinkAtLaunch = false
     private var overrideTimer: Timer?
+    /// Keeps App Nap away for the app's lifetime (with NSAppSleepDisabled in Info.plist). A napped
+    /// TrafficControl receives links late and runs at background priority, so a click that takes a few
+    /// milliseconds right after launch takes about a second once the app has sat idle for a while.
+    private var noNapActivity: NSObjectProtocol?
 
     func applicationWillTerminate(_ notification: Notification) {
         history.flush()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        noNapActivity = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep,
+            reason: "Routes clicked links the moment they arrive")
         installMainMenu()
         settings.$settings
             .map(\.showMenuBarIcon)

@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.3.0</string>
+	<string>0.3.1</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
@@ -27,6 +27,9 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSUIElement</key>
+	<true/>
+	<!-- A menu bar app with no windows gets App Napped after a while, which delays every click by about a second. -->
+	<key>NSAppSleepDisabled</key>
 	<true/>
 	<!-- Sparkle: the feed is attached to every GitHub release; updates must be signed with the matching private key. -->
 	<key>SUFeedURL</key>

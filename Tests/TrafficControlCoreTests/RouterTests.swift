@@ -257,6 +257,22 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         #expect(args == ["--profile-directory=Profile 2", "https://a.com/x?y=1"])
     }
 
+    @Test func singletonMessageMatchesChromiumFormat() {
+        let data = ChromiumProfiles.singletonMessage(
+            executable: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            arguments: ["--profile-directory=Profile 2", "https://a.com/"])
+        let expected = "START\0/\0/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\0--profile-directory=Profile 2\0https://a.com/"
+        #expect(data == Data(expected.utf8))
+    }
+
+    @Test func singletonSocketLivesInUserDataDirectory() {
+        let support = URL(filePath: "/Users/me/Library/Application Support", directoryHint: .isDirectory)
+        #expect(
+            ChromiumProfiles.singletonSocket(for: "com.brave.Browser", applicationSupport: support)?.path(percentEncoded: false)
+                == "/Users/me/Library/Application Support/BraveSoftware/Brave-Browser/SingletonSocket")
+        #expect(ChromiumProfiles.singletonSocket(for: "com.apple.Safari", applicationSupport: support) == nil)
+    }
+
     @Test func ruleOpensSpecificProfile() {
         var s = AppSettings()
         s.rules = [Rule(conditions: [Condition(field: .host, value: "corp.com")], action: .open(browserID: chrome, profileID: "Profile 2"))]

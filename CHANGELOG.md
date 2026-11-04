@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+- Links that open in a Chrome (or other Chromium) profile go straight to the running browser over its
+  singleton socket instead of starting the browser's executable. They used to take seconds once
+  Chrome had updated itself in the background but not been relaunched yet.
+- TrafficControl opts out of App Nap, so an idle menu bar app still routes links straight away.
+
 ## 0.3.0
 
 - A fresh look. The picker shows the link's site and the app it came from above larger browser tiles,

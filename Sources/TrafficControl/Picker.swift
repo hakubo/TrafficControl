@@ -72,6 +72,10 @@ final class PickerPanel: NSPanel {
     }
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown || event.type == .leftMouseUp {
+            // How long the key press or click waited before the picker saw it.
+            Timing.note("picker \(event.type == .keyDown ? "key" : "click") arrived \(Int((ProcessInfo.processInfo.systemUptime - event.timestamp) * 1000)) ms late")
+        }
         if event.type == .keyDown, keyHandler?(event) == true { return }
         if event.type == .flagsChanged { flagsHandler?(event.modifierFlags) }
         super.sendEvent(event)
@@ -243,6 +247,8 @@ final class PickerController {
 
     private func choose(_ index: Int, inBackground: Bool, remember: Bool = false) {
         guard let model, let current, model.choices.indices.contains(index) else { return }
+        let start = ContinuousClock.now
+        defer { Timing.report("picker choose", since: start) }
         let choice = model.choices[index]
         if settings.settings.rememberDomains { history.record(current.url, destination: choice.destination, picked: true) }
         // Desktop-app entries have no rule action, so they are only ever opened.
