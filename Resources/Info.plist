@@ -28,6 +28,9 @@
 	<string>public.app-category.utilities</string>
 	<key>LSUIElement</key>
 	<true/>
+	<!-- A menu bar app with no windows gets App Napped after a while, which delays every click by about a second. -->
+	<key>NSAppSleepDisabled</key>
+	<true/>
 	<!-- Sparkle: the feed is attached to every GitHub release; updates must be signed with the matching private key. -->
 	<key>SUFeedURL</key>
 	<string>https://github.com/hakubo/TrafficControl/releases/latest/download/appcast.xml</string>

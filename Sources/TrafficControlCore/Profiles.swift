@@ -90,4 +90,18 @@ public enum ChromiumProfiles {
     public static func launchArguments(profileID: String, urls: [URL]) -> [String] {
         ["--profile-directory=\(profileID)"] + urls.map(\.absoluteString)
     }
+
+    /// The running browser's `SingletonSocket` (a symlink to the real socket), which a second launch of
+    /// the browser uses to hand its arguments over.
+    public static func singletonSocket(for bundleID: String, applicationSupport: URL = .applicationSupportDirectory) -> URL? {
+        guard let relative = userDataDirectories[bundleID] else { return nil }
+        return applicationSupport.appending(path: relative, directoryHint: .isDirectory).appending(path: "SingletonSocket")
+    }
+
+    /// What a second launch writes to `SingletonSocket` (Chromium's process_singleton_posix.cc):
+    /// "START", the working directory and the full command line, separated by NUL bytes.
+    /// The running browser answers "ACK" once it has taken the arguments.
+    public static func singletonMessage(executable: String, arguments: [String], workingDirectory: String = "/") -> Data {
+        Data((["START", workingDirectory, executable] + arguments).joined(separator: "\0").utf8)
+    }
 }

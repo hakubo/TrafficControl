@@ -226,35 +226,74 @@ final class BrowserManager: ObservableObject {
         if let profileID, !inBackground, runningBrowserIDs.contains(browser.id),
             let executable = Bundle(url: browser.appURL)?.executableURL
         {
-            // The browser is already running: start its executable directly. It hands the arguments to the
-            // running browser and exits, without the cost of LaunchServices registering a new app instance.
-            let process = Process()
-            process.executableURL = executable
-            process.arguments = ChromiumProfiles.launchArguments(profileID: profileID, urls: urls)
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            process.terminationHandler = { _ in Timing.report("hand off to \(browser.name) for profile \(profileID)", since: start) }
-            do {
-                try process.run()
-                return
-            } catch {
-                NSLog("TrafficControl: failed to start \(executable.path): \(error)")
+            // The browser is already running: hand it the arguments over its singleton socket, as a second
+            // launch would. If the socket can't be reached, start the executable, which does the same.
+            let arguments = ChromiumProfiles.launchArguments(profileID: profileID, urls: urls)
+            let activates = config.activates
+            // Activation is cooperative since macOS 14: without this, the browser may not be allowed to come
+            // to the front when it activates itself (for example right after the picker was active).
+            NSApp.yieldActivation(toApplicationWithBundleIdentifier: browser.id)
+            ChromiumSingleton.queue.async {
+                if ChromiumSingleton.send(bundleID: browser.id, executable: executable, arguments: arguments) {
+                    Timing.report("hand off to \(browser.name) for profile \(profileID) via socket", since: start)
+                    return
+                }
+                DispatchQueue.main.async { [weak self] in
+                    MainActor.assumeIsolated {
+                        self?.launch(
+                            executable, arguments: arguments, browser: browser, profileID: profileID, activates: activates,
+                            start: start)
+                    }
+                }
             }
+            return
         }
         if let profileID {
-            // Like `open -n --args`: a fresh process receives the arguments and hands them to the
-            // running browser, which opens the links in that profile's window.
-            config.createsNewApplicationInstance = true
-            config.arguments = ChromiumProfiles.launchArguments(profileID: profileID, urls: urls)
-            NSWorkspace.shared.openApplication(at: browser.appURL, configuration: config) { _, error in
-                Timing.report("launch \(browser.name) for profile \(profileID)", since: start)
-                if let error { NSLog("TrafficControl: failed to open in \(browser.name) (\(profileID)): \(error)") }
-            }
+            openNewInstance(
+                in: browser, profileID: profileID, arguments: ChromiumProfiles.launchArguments(profileID: profileID, urls: urls),
+                activates: config.activates, start: start)
             return
         }
         NSWorkspace.shared.open(urls, withApplicationAt: browser.appURL, configuration: config) { _, error in
             Timing.report("hand link to \(browser.name)", since: start)
             if let error { NSLog("TrafficControl: failed to open in \(browser.name): \(error)") }
+        }
+    }
+
+    /// Starts the browser's executable, which hands the arguments to the running browser and exits, without
+    /// the cost of LaunchServices registering a new app instance. Falls back to that if it can't start.
+    private func launch(
+        _ executable: URL, arguments: [String], browser: Browser, profileID: String, activates: Bool,
+        start: ContinuousClock.Instant
+    ) {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        // The user is waiting on this hand-off; don't let it inherit a background priority.
+        process.qualityOfService = .userInteractive
+        process.terminationHandler = { _ in Timing.report("hand off to \(browser.name) for profile \(profileID)", since: start) }
+        do {
+            try process.run()
+        } catch {
+            NSLog("TrafficControl: failed to start \(executable.path): \(error)")
+            openNewInstance(in: browser, profileID: profileID, arguments: arguments, activates: activates, start: start)
+        }
+    }
+
+    /// Like `open -n --args`: a fresh process receives the arguments and hands them to the running browser
+    /// (or becomes the browser), which opens the links in that profile's window.
+    private func openNewInstance(
+        in browser: Browser, profileID: String, arguments: [String], activates: Bool, start: ContinuousClock.Instant
+    ) {
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = activates
+        config.createsNewApplicationInstance = true
+        config.arguments = arguments
+        NSWorkspace.shared.openApplication(at: browser.appURL, configuration: config) { _, error in
+            Timing.report("launch \(browser.name) for profile \(profileID)", since: start)
+            if let error { NSLog("TrafficControl: failed to open in \(browser.name) (\(profileID)): \(error)") }
         }
     }
 }
