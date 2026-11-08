@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The browser picker stays within the screen and lets you scroll to every browser profile.
+
 ## 0.3.1
 
 - Links that open in a Chrome (or other Chromium) profile go straight to the running browser over its

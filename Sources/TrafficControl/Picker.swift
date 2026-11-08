@@ -146,7 +146,9 @@ final class PickerController {
         let panel = PickerPanel()
         panel.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
         panel.flagsHandler = { [weak self] flags in self?.flagsChanged(flags) }
-        let host = NSHostingView(rootView: PickerView(model: model))
+        let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
+        let maxWidth = max(300, (screen?.visibleFrame.width ?? 800) - 16)
+        let host = NSHostingView(rootView: PickerView(model: model, maxWidth: maxWidth))
         panel.contentView = host
         let size = host.fittingSize
         panel.setContentSize(size)
@@ -281,6 +283,7 @@ final class PickerController {
 
 struct PickerView: View {
     @ObservedObject var model: PickerModel
+    let maxWidth: CGFloat
 
     /// "Chrome, Buffer profile, 2": parts that don't exist are left out.
     private static func accessibilityLabel(for choice: BrowserChoice, shortcut: Int?) -> String {
@@ -317,33 +320,46 @@ struct PickerView: View {
         VStack(spacing: 0) {
             if model.showURL {
                 linkChip
-                    .frame(width: max(tilesWidth, 300))
+                    .frame(width: min(max(tilesWidth, 300), maxWidth - 24))
                     .padding(.bottom, 10)
             }
-            HStack(spacing: 4) {
-                ForEach(Array(model.choices.enumerated()), id: \.element.id) { index, choice in
-                    Button {
-                        model.onChoose(index, NSEvent.modifierFlags.contains(.shift))
-                    } label: {
-                        ChoiceTile(
-                            choice: choice, shortcut: index < 9 ? index + 1 : nil, isSelected: index == model.selection,
-                            isHovered: index == model.hovered,
-                            isPinned: model.remembering && index == (model.hovered ?? model.selection),
-                            remembering: model.remembering
-                        )
-                        .contentShape(Rectangle())
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 4) {
+                        ForEach(Array(model.choices.enumerated()), id: \.element.id) { index, choice in
+                            Button {
+                                model.onChoose(index, NSEvent.modifierFlags.contains(.shift))
+                            } label: {
+                                ChoiceTile(
+                                    choice: choice, shortcut: index < 9 ? index + 1 : nil, isSelected: index == model.selection,
+                                    isHovered: index == model.hovered,
+                                    isPinned: model.remembering && index == (model.hovered ?? model.selection),
+                                    remembering: model.remembering
+                                )
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            // Keys are handled by the panel, so buttons must not take focus.
+                            .focusable(false)
+                            .onHover { if $0 { model.hovered = index } else if model.hovered == index { model.hovered = nil } }
+                            .accessibilityLabel(Self.accessibilityLabel(for: choice, shortcut: index < 9 ? index + 1 : nil))
+                            .accessibilityAddTraits(index == model.selection ? .isSelected : [])
+                            .id(index)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    // Keys are handled by the panel, so buttons must not take focus.
-                    .focusable(false)
-                    .onHover { if $0 { model.hovered = index } else if model.hovered == index { model.hovered = nil } }
-                    .accessibilityLabel(Self.accessibilityLabel(for: choice, shortcut: index < 9 ? index + 1 : nil))
-                    .accessibilityAddTraits(index == model.selection ? .isSelected : [])
+                    .scrollTargetLayout()
+                }
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned)
+                .frame(width: min(tilesWidth, maxWidth - 24))
+                .onChange(of: model.selection) { _, selection in
+                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(selection, anchor: .center) }
                 }
             }
             footer.padding(.top, 9)
         }
         .padding(12)
+        .frame(maxWidth: maxWidth)
         .background(VisualEffectBackground())
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
