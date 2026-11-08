@@ -221,10 +221,10 @@ final class BrowserManager: ObservableObject {
     /// Used by routing, which already owns a place in the link queue.
     func openOrSwitchNow(_ url: URL, in browser: Browser, profileID: String?, inBackground: Bool, reuseTab: Bool) async {
         if reuseTab, await OpenTabFinder.reuse(url, in: [browser.id], activate: !inBackground) { return }
-        await open([url], in: browser, profileID: profileID, inBackground: inBackground)
+        open([url], in: browser, profileID: profileID, inBackground: inBackground)
     }
 
-    private func open(_ urls: [URL], in browser: Browser, profileID: String? = nil, inBackground: Bool) async {
+    private func open(_ urls: [URL], in browser: Browser, profileID: String? = nil, inBackground: Bool) {
         let config = NSWorkspace.OpenConfiguration()
         config.activates = !inBackground
         let start = ContinuousClock.now
@@ -238,15 +238,16 @@ final class BrowserManager: ObservableObject {
             // Activation is cooperative since macOS 14: without this, the browser may not be allowed to come
             // to the front when it activates itself (for example right after the picker was active).
             NSApp.yieldActivation(toApplicationWithBundleIdentifier: browser.id)
-            let delivered = await withCheckedContinuation { continuation in
-                ChromiumSingleton.queue.async {
-                    continuation.resume(returning: ChromiumSingleton.send(bundleID: browser.id, executable: executable, arguments: arguments))
+            ChromiumSingleton.queue.async {
+                if ChromiumSingleton.send(bundleID: browser.id, executable: executable, arguments: arguments) {
+                    Timing.report("hand off to \(browser.name) for profile \(profileID) via socket", since: start)
+                } else {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.launch(
+                            executable, arguments: arguments, browser: browser, profileID: profileID,
+                            activates: activates, start: start)
+                    }
                 }
-            }
-            if delivered {
-                Timing.report("hand off to \(browser.name) for profile \(profileID) via socket", since: start)
-            } else {
-                launch(executable, arguments: arguments, browser: browser, profileID: profileID, activates: activates, start: start)
             }
             return
         }
