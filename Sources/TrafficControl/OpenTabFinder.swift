@@ -17,6 +17,15 @@ enum OpenTabFinder {
     @MainActor private static var consentRequested: Set<String> = []
     @MainActor private static var permissions: [String: Permission] = [:]
     @MainActor private static var permissionObserver: NSObjectProtocol?
+    /// Consent dialogs block until answered: one at a time, on a thread of their own rather than the
+    /// cooperative pool.
+    private static let consentQueue = DispatchQueue(label: "TrafficControl.AutomationConsent", qos: .userInitiated)
+
+    nonisolated private static func requestConsent(for id: String) async -> Permission {
+        await withCheckedContinuation { continuation in
+            consentQueue.async { continuation.resume(returning: permission(for: id, prompt: true)) }
+        }
+    }
 
     /// Permission checks run separately from lookup; consent is requested once per browser per session.
     @MainActor
@@ -36,19 +45,24 @@ enum OpenTabFinder {
                 var status = await Task.detached(priority: .userInitiated) {
                     permission(for: id, prompt: false)
                 }.value
-                if status == .notAsked, consentRequested.insert(id).inserted {
-                    status = await Task.detached(priority: .userInitiated) {
-                        permission(for: id, prompt: true)
-                    }.value
+                if status == .notAsked, !consentRequested.contains(id) {
+                    status = await requestConsent(for: id)
+                    // Only a real answer counts; a browser that quit mid-prompt gets asked again.
+                    if status == .allowed || status == .denied { consentRequested.insert(id) }
                 }
                 if status == .allowed || status == .denied { permissions[id] = status }
             }
         }
-        // Unknown permissions open normally, including the link that first triggers consent.
-        let allowedIDs = ids.filter { permissions[$0] == .allowed }
-        guard !allowedIDs.isEmpty else { return false }
+        let candidates = ids.filter { permissions[$0] != .denied }
+        guard !candidates.isEmpty else { return false }
+        let known = permissions
         let automation = automation
         return await worker.run(timeout: 1.5) { attempt in
+            // A browser not in the cache yet (after launch or reactivation) is checked here, off the main
+            // actor and without prompting, so the first link still reuses its tab. Undecided ones open normally.
+            let allowedIDs = candidates.filter {
+                known[$0] == .allowed || (known[$0] == nil && permission(for: $0, prompt: false) == .allowed)
+            }
             guard let tab = automation.find(url, in: allowedIDs, deadline: attempt.deadline), attempt.commit() else { return false }
             // Focus has its own one-second AppleScript timeout after the commit point.
             return automation.focus(tab, activate: activate, deadline: .now() + 1)
@@ -170,6 +184,9 @@ enum OpenTabFinder {
                     repeat with w in windows
                         try
                             set end of out to {id of w, URL of every tab of w}
+                        on error number errorNumber
+                            -- A browser that stopped answering won't answer for the next window either.
+                            if errorNumber is -1712 then exit repeat
                         end try
                     end repeat
                     return out
