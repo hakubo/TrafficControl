@@ -19,6 +19,9 @@ struct BrowsersSettingsView: View {
                         BrowserChoiceRow(
                             choice: choice,
                             isVisible: visibility(of: choice, among: choices),
+                            canHide: model.settings.canHide(
+                                choice.target,
+                                among: choices.filter { !model.settings.isHidden($0.target) }.map(\.target)),
                             isPrimary: isPrimary(choice))
                     },
                     onReorder: { model.settings.choiceOrder = $0.map(\.target) }
@@ -49,6 +52,7 @@ struct BrowsersSettingsView: View {
 private struct BrowserChoiceRow: View {
     let choice: BrowserChoice
     @Binding var isVisible: Bool
+    let canHide: Bool
     let isPrimary: Bool
 
     var body: some View {
@@ -73,6 +77,8 @@ private struct BrowserChoiceRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                .disabled(isVisible && !canHide)
+                .help(isVisible && !canHide ? "At least one picker destination must stay visible." : "")
         }
         .opacity(isVisible ? 1 : 0.55)
     }

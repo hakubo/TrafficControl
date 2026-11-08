@@ -38,16 +38,25 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     }
 }
 
+@MainActor
+final class SettingsNavigation: ObservableObject {
+    @Published var pane: SettingsPane? = .general
+}
+
 struct SettingsView: View {
     @EnvironmentObject private var model: SettingsModel
     @EnvironmentObject private var browsers: BrowserManager
     @EnvironmentObject private var updater: UpdaterModel
     @EnvironmentObject private var defaultStatus: DefaultBrowserStatus
-    @State private var pane: SettingsPane? = .general
+    @ObservedObject private var navigation: SettingsNavigation
+
+    init(navigation: SettingsNavigation) {
+        _navigation = ObservedObject(wrappedValue: navigation)
+    }
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $pane) {
+            List(selection: $navigation.pane) {
                 sidebarSection("Routing", [.general, .browsers, .rules])
                 sidebarSection("Integrations", [.apps])
                 if updater.isAvailable {
@@ -66,7 +75,7 @@ struct SettingsView: View {
             .toolbar(removing: .sidebarToggle)
         } detail: {
             Group {
-                switch pane ?? .general {
+                switch navigation.pane ?? .general {
                 case .general: GeneralSettingsView()
                 case .browsers: BrowsersSettingsView()
                 case .rules: RulesSettingsView()
@@ -74,7 +83,7 @@ struct SettingsView: View {
                 case .updates: UpdatesSettingsView()
                 }
             }
-            .navigationTitle((pane ?? .general).title)
+            .navigationTitle((navigation.pane ?? .general).title)
         }
         .frame(minWidth: 780, minHeight: 520)
     }

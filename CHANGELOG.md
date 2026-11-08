@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Links stay available when the picker has no visible destinations, with options to open a browser, copy the link, or adjust browser settings.
+
 ## 0.3.1
 
 - Links that open in a Chrome (or other Chromium) profile go straight to the running browser over its

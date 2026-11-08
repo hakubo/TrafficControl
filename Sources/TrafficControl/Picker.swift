@@ -88,6 +88,7 @@ final class PickerController {
     private let settings: SettingsModel
     private let browsers: BrowserManager
     private let history: HistoryModel
+    private let openBrowserSettings: () -> Void
     private var queue: [PickerRequest] = []
     private var panel: PickerPanel?
     private var model: PickerModel?
@@ -95,11 +96,13 @@ final class PickerController {
     private var monitors: [Any] = []
     /// ⌘ was already down when the picker opened (it can be the picker key), so it only counts once released.
     private var rememberKeyBlocked = false
+    private var recoveryMode = false
 
-    init(settings: SettingsModel, browsers: BrowserManager, history: HistoryModel) {
+    init(settings: SettingsModel, browsers: BrowserManager, history: HistoryModel, openBrowserSettings: @escaping () -> Void = {}) {
         self.settings = settings
         self.browsers = browsers
         self.history = history
+        self.openBrowserSettings = openBrowserSettings
     }
 
     func enqueue(_ request: PickerRequest) {
@@ -109,12 +112,11 @@ final class PickerController {
 
     private func showNext() {
         guard panel == nil, !queue.isEmpty else { return }
-        let request = queue.removeFirst()
+        let request = queue[0]
         let s = settings.settings
         let list = browsers.pickerChoices(s, for: request.url)
         guard !list.isEmpty else {
-            NSSound.beep()
-            showNext()
+            showRecovery(for: request)
             return
         }
 
@@ -155,6 +157,7 @@ final class PickerController {
         self.panel = panel
         self.model = model
         self.current = request
+        recoveryMode = false
         panel.makeKeyAndOrderFront(nil)
         panel.invalidateShadow()
 
@@ -162,11 +165,59 @@ final class PickerController {
         if let m = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown],
             handler: { [weak self] _ in
-                MainActor.assumeIsolated { self?.dismiss() }
+                MainActor.assumeIsolated {
+                    guard let self, !self.recoveryMode else { return }
+                    self.cancelCurrent()
+                }
             })
         {
             monitors.append(m)
         }
+    }
+
+    private func showRecovery(for request: PickerRequest) {
+        let panel = PickerPanel()
+        panel.keyHandler = { [weak self] event in
+            guard let self, event.keyCode == 53 else { return false }
+            self.cancelCurrent()
+            return true
+        }
+        let browser = browsers.orderedChoices(settings.settings, includeHidden: true).first?.browser
+        let host = NSHostingView(
+            rootView: EmptyPickerRecoveryView(
+                url: request.url,
+                browserName: browser?.name,
+                openSettings: openBrowserSettings,
+                copyLink: { [weak self] in self?.copyCurrentLink() },
+                openBrowser: { [weak self] in if let browser { self?.openCurrent(in: browser) } },
+                cancel: { [weak self] in self?.cancelCurrent() }))
+        panel.contentView = host
+        let size = host.fittingSize
+        panel.setContentSize(size)
+        panel.setFrameOrigin(origin(for: size))
+        self.panel = panel
+        self.current = request
+        recoveryMode = true
+        panel.makeKeyAndOrderFront(nil)
+        panel.invalidateShadow()
+    }
+
+    private func copyCurrentLink() {
+        guard let current else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(current.url.absoluteString, forType: .string)
+        cancelCurrent()
+    }
+
+    private func openCurrent(in browser: Browser) {
+        guard let current else { return }
+        browsers.openOrSwitch(current.url, in: browser, profileID: nil, inBackground: false, reuseTab: false)
+        cancelCurrent()
+    }
+
+    private func cancelCurrent() {
+        if !queue.isEmpty { queue.removeFirst() }
+        dismiss()
     }
 
     /// Centered on the mouse pointer, kept inside the visible area of its screen.
@@ -187,6 +238,10 @@ final class PickerController {
     }
 
     private func handleKey(_ event: NSEvent) -> Bool {
+        if recoveryMode {
+            if event.keyCode == 53 { cancelCurrent(); return true }
+            return false
+        }
         guard let model else { return false }
         let count = model.choices.count
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -197,7 +252,7 @@ final class PickerController {
 
         switch event.keyCode {
         case 53:  // escape
-            dismiss()
+            cancelCurrent()
             return true
         case 36, 76:  // return, keypad enter
             choose(model.selection, inBackground: background, remember: remember)
@@ -217,10 +272,10 @@ final class PickerController {
             case "c":
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(model.url.absoluteString, forType: .string)
-                dismiss()
+                cancelCurrent()
                 return true
             case "w", ".":
-                dismiss()
+                cancelCurrent()
                 return true
             default:
                 break
@@ -255,13 +310,13 @@ final class PickerController {
         if remember, choice.deepLink == nil { settings.settings.rules.remember(current.url, to: choice.target) }
         if let deepLink = choice.deepLink {
             browsers.openInApp(deepLink, bundleID: choice.browser.id)
-            dismiss()
+            cancelCurrent()
             return
         }
         browsers.openOrSwitch(
             current.url, in: choice.browser, profileID: choice.profile?.id, inBackground: inBackground,
             reuseTab: settings.settings.tabReuse != .off)
-        dismiss()
+        cancelCurrent()
     }
 
     private func dismiss() {
@@ -271,6 +326,7 @@ final class PickerController {
         self.panel = nil
         self.model = nil
         self.current = nil
+        recoveryMode = false
         rememberKeyBlocked = false
         panel.orderOut(nil)
         DispatchQueue.main.async { [weak self] in self?.showNext() }
@@ -434,6 +490,47 @@ struct PickerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.amber.opacity(0.14)))
         .accessibilityHidden(!model.remembering)
+    }
+}
+
+private struct EmptyPickerRecoveryView: View {
+    let url: URL
+    let browserName: String?
+    let openSettings: () -> Void
+    let copyLink: () -> Void
+    let openBrowser: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("No picker destinations are available")
+                .font(.headline)
+            Text("This link is still waiting. Show a browser in Settings, copy the link, or cancel.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(url.absoluteString)
+                .font(.system(.caption, design: .monospaced))
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .help(url.absoluteString)
+            HStack {
+                Button("Open Settings") { openSettings() }
+                if let browserName {
+                    Button("Open in \(browserName)") { openBrowser() }
+                }
+                Spacer()
+                Button("Copy Link", action: copyLink)
+                Button("Cancel", action: cancel)
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 410)
+        .background(VisualEffectBackground())
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
     }
 }
 
