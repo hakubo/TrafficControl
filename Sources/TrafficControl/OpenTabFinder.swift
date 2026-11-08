@@ -8,9 +8,25 @@ struct OpenTab {
 }
 
 /// Finds and focuses tabs in running browsers through AppleScript.
-/// macOS asks the user once per browser before TrafficControl may control it; if denied, nothing is found.
-@MainActor
+/// Only browsers already allowed in Automation settings are queried; link handling never prompts.
 enum OpenTabFinder {
+    @MainActor private static let worker = TabLookupWorker()
+
+    /// The deadline covers the entire search and focus, across every browser.
+    @MainActor
+    static func reuse(_ url: URL, in browserIDs: [String], activate: Bool = true) async -> Bool {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        return await worker.run(timeout: 1.5) { deadline in
+            lookupDeadline = deadline
+            defer { lookupDeadline = nil }
+            guard let tab = find(url, in: browserIDs.filter { running.contains($0) }) else { return false }
+            return focus(tab, activate: activate)
+        }
+    }
+
+    // All mutable Automation state and NSAppleScript instances belong to the serial worker.
+    private static var lookupDeadline: DispatchTime?
+
     private enum Dialect { case chromium, safari }
 
     private static let dialects: [String: Dialect] = {
@@ -19,9 +35,6 @@ enum OpenTabFinder {
         map["com.apple.SafariTechnologyPreview"] = .safari
         return map
     }()
-
-    /// Browsers that refused Automation access (-1743). Skipped until relaunch so a click never waits on a known denial.
-    private static var deniedBrowsers: Set<String> = []
 
     /// Compiled static scripts, keyed by source (which embeds the browser ID), so each is compiled once.
     private static var compiledScripts: [String: NSAppleScript] = [:]
@@ -55,20 +68,12 @@ enum OpenTabFinder {
         }
     }
 
-    /// Keeps the session's denial cache in step with a status read from macOS.
-    static func note(_ permission: Permission, for browserID: String) {
-        switch permission {
-        case .allowed: deniedBrowsers.remove(browserID)
-        case .denied: deniedBrowsers.insert(browserID)
-        case .notAsked, .notRunning, .unknown: break
-        }
-    }
-
     /// Searches the given browsers in order; browsers that aren't running are skipped, never launched.
-    static func find(_ url: URL, in browserIDs: [String]) -> OpenTab? {
+    private static func find(_ url: URL, in browserIDs: [String]) -> OpenTab? {
         guard TabMatching.key(for: url) != nil else { return nil }
-        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
-        for id in browserIDs where supports(id) && running.contains(id) && !deniedBrowsers.contains(id) {
+        for id in browserIDs {
+            guard let deadline = lookupDeadline, DispatchTime.now() < deadline else { return nil }
+            guard supports(id), permission(for: id, prompt: false) == .allowed else { continue }
             if let hit = TabMatching.find(url, in: Timing.measure("read tabs of \(id)") { windows(of: id) }) {
                 return OpenTab(browserID: id, windowID: hit.window, tabIndex: hit.tabIndex)
             }
@@ -78,8 +83,8 @@ enum OpenTabFinder {
 
     /// Selects the tab and, unless `activate` is false, brings its window and browser to the front.
     @discardableResult
-    static func focus(_ tab: OpenTab, activate: Bool = true) -> Bool {
-        guard let dialect = dialects[tab.browserID], !deniedBrowsers.contains(tab.browserID) else { return false }
+    private static func focus(_ tab: OpenTab, activate: Bool = true) -> Bool {
+        guard let dialect = dialects[tab.browserID] else { return false }
         let selectTab: String
         let unminimize: String
         switch dialect {
@@ -127,7 +132,6 @@ enum OpenTabFinder {
                 }
             }
         }
-        if deniedBrowsers.contains(browserID) { return [] }
         let script = """
             tell application id "\(browserID)"
                 set out to {}
@@ -155,6 +159,8 @@ enum OpenTabFinder {
 
     /// `cached` is for sources that never change per browser; per-call sources (window and tab ids) compile each time.
     private static func run(_ source: String, browserID: String, cached: Bool = false, quiet: Bool = false) -> NSAppleEventDescriptor? {
+        guard let deadline = lookupDeadline, DispatchTime.now() < deadline else { return nil }
+        let source = "with timeout of 1 second\n" + source + "\nend timeout"
         var error: NSDictionary?
         var script = cached ? compiledScripts[source] : nil
         if script == nil {
@@ -165,10 +171,9 @@ enum OpenTabFinder {
             }
             if cached { compiledScripts[source] = script }
         }
+        guard DispatchTime.now() < deadline else { return nil }
         let result = script?.executeAndReturnError(&error)
         if let error {
-            // -1743: the user hasn't allowed TrafficControl to control this browser.
-            if (error[NSAppleScript.errorNumber] as? Int) == -1743 { deniedBrowsers.insert(browserID) }
             if !quiet { NSLog("TrafficControl: AppleScript failed: \(error)") }
             return nil
         }

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Checking for an already-open tab no longer freezes the picker or Settings. If a browser takes too long to respond, the link opens normally.
+
 ## 0.3.1
 
 - Links that open in a Chrome (or other Chromium) profile go straight to the running browser over its

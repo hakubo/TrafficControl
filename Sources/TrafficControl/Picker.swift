@@ -258,10 +258,10 @@ final class PickerController {
             dismiss()
             return
         }
+        dismiss()
         browsers.openOrSwitch(
             current.url, in: choice.browser, profileID: choice.profile?.id, inBackground: inBackground,
             reuseTab: settings.settings.tabReuse != .off)
-        dismiss()
     }
 
     private func dismiss() {

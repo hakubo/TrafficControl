@@ -78,7 +78,6 @@ struct AutomationPermissionsView: View {
     private func apply(_ found: [String: OpenTabFinder.Permission]) {
         for (id, status) in found {
             statuses[id] = status
-            OpenTabFinder.note(status, for: id)
         }
     }
 }
