@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Holding ⌘ in the picker now names the browser that ⌘Return will actually remember. Moving the
+  pointer onto a browser selects it, so the highlighted tile, the "Always open" banner and what Return
+  or ⌘-click saves can no longer point at different browsers.
+
 ## 0.3.1
 
 - Links that open in a Chrome (or other Chromium) profile go straight to the running browser over its
