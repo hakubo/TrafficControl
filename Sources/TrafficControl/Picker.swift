@@ -100,8 +100,11 @@ final class PickerController {
     private var rememberKeyBlocked = false
     private var recoveryMode = false
     private var recoveryCancellables = Set<AnyCancellable>()
+    /// The recovery panel stepped aside for Settings. Nothing is shown until Settings closes, so no
+    /// panel covers the toggles the user went there to change; the link stays queued meanwhile.
     private var recoverySuppressedForSettings = false
-    private var settingsCloseObserver: NSObjectProtocol?
+    /// The browser the recovery panel offers, fixed when it is shown so the button and the action agree.
+    private var recoveryBrowserID: String?
 
     init(settings: SettingsModel, browsers: BrowserManager, history: HistoryModel, openBrowserSettings: @escaping () -> Void = {}) {
         self.settings = settings
@@ -116,7 +119,7 @@ final class PickerController {
     }
 
     private func showNext() {
-        guard panel == nil, let request = queue.head else { return }
+        guard panel == nil, !recoverySuppressedForSettings, let request = queue.head else { return }
         let s = settings.settings
         let list = browsers.pickerChoices(s, for: request.url)
         guard !PickerQueue<PickerRequest>.needsRecovery(choices: list) else {
@@ -184,6 +187,7 @@ final class PickerController {
         panel.level = .floating
         panel.keyHandler = { [weak self] event in self?.handleRecoveryKey(event) ?? false }
         let browser = preferredRecoveryBrowser()
+        recoveryBrowserID = browser?.id
         let installed = !browsers.installed.isEmpty
         let host = NSHostingView(
             rootView: EmptyPickerRecoveryView(
@@ -212,6 +216,9 @@ final class PickerController {
         browsers.$installed.dropFirst().sink { [weak self] _ in
             Task { @MainActor in self?.reevaluateRecovery() }
         }.store(in: &recoveryCancellables)
+        browsers.$profiles.dropFirst().sink { [weak self] _ in
+            Task { @MainActor in self?.reevaluateRecovery() }
+        }.store(in: &recoveryCancellables)
     }
 
     private func preferredRecoveryBrowser() -> Browser? {
@@ -222,41 +229,37 @@ final class PickerController {
     }
 
     private func hideRecoveryForSettings() {
+        // The link stays at the head of the queue; settingsDidClose shows the picker or recovery again.
+        dismissPanelOnly()
         recoverySuppressedForSettings = true
-        panel?.orderOut(nil)
-        panel = nil
-        if settingsCloseObserver == nil {
-            settingsCloseObserver = NotificationCenter.default.addObserver(
-                forName: NSWindow.willCloseNotification, object: nil, queue: .main
-            ) { [weak self] notification in
-                guard let window = notification.object as? NSWindow, window.title == "TrafficControl" else { return }
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.recoverySuppressedForSettings = false
-                    self.removeSettingsCloseObserver()
-                    self.reevaluateRecovery()
-                }
-            }
-        }
     }
 
+    /// The Settings window closed: show whatever the queued link needs now, the picker if a browser
+    /// was made visible, else the recovery panel again.
+    func settingsDidClose() {
+        guard recoverySuppressedForSettings else { return }
+        recoverySuppressedForSettings = false
+        showNext()
+    }
+
+    /// Settings, browsers or profiles changed while the recovery panel is up: show the picker if the
+    /// link has choices now, else rebuild the panel so it offers what is installed now.
     private func reevaluateRecovery() {
-        guard recoveryMode, let current else { return }
-        if !browsers.pickerChoices(settings.settings, for: current.url).isEmpty {
-            dismissPanelOnly()
+        guard recoveryMode, panel != nil, let current else { return }
+        dismissPanelOnly()
+        if browsers.pickerChoices(settings.settings, for: current.url).isEmpty {
+            showRecovery(for: current)
+        } else {
             showNext()
-        } else if panel == nil && !recoverySuppressedForSettings {
-            showRecovery(for: current)
-        } else if panel != nil {
-            dismissPanelOnly()
-            showRecovery(for: current)
         }
     }
 
     private func openRecoveryBrowser() {
-        guard let browser = preferredRecoveryBrowser(), let current else { return }
-        guard let installed = browsers.browser(withID: browser.id) else {
-            if panel == nil { showRecovery(for: current) }
+        guard let current, let id = recoveryBrowserID else { return }
+        guard let installed = browsers.browser(withID: id) else {
+            // Uninstalled while the panel was up: offer what is there now, and keep the link.
+            dismissPanelOnly()
+            showRecovery(for: current)
             return
         }
         let primaryProfile = settings.settings.primaryBrowser.flatMap { target in
@@ -280,7 +283,7 @@ final class PickerController {
         switch event.keyCode {
         case 53: cancelCurrent(); return true
         case 36, 76:
-            if preferredRecoveryBrowser() != nil { openRecoveryBrowser() } else { copyCurrentLink() }
+            if recoveryBrowserID != nil { openRecoveryBrowser() } else { copyCurrentLink() }
             return true
         default: return false
         }
@@ -290,12 +293,6 @@ final class PickerController {
         guard let current else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(current.url.absoluteString, forType: .string)
-        cancelCurrent()
-    }
-
-    private func openCurrent(in browser: Browser) {
-        guard let current else { return }
-        browsers.openOrSwitch(current.url, in: browser, profileID: nil, inBackground: false, reuseTab: false)
         cancelCurrent()
     }
 
@@ -415,16 +412,12 @@ final class PickerController {
         self.current = nil
         recoveryMode = false
         recoverySuppressedForSettings = false
+        recoveryBrowserID = nil
         recoveryCancellables.removeAll()
-        removeSettingsCloseObserver()
         rememberKeyBlocked = false
         panel.orderOut(nil)
     }
 
-    private func removeSettingsCloseObserver() {
-        if let settingsCloseObserver { NotificationCenter.default.removeObserver(settingsCloseObserver) }
-        settingsCloseObserver = nil
-    }
 }
 
 // MARK: - View

@@ -271,6 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard (notification.object as? NSWindow) === settingsWindow else { return }
         NSApp.setActivationPolicy(.accessory)
+        picker.settingsDidClose()
     }
 
     /// Never shown while TrafficControl is a menu bar app, but its key equivalents still route

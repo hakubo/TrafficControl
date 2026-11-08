@@ -26,4 +26,17 @@ private struct Request: Identifiable {
         #expect(PickerQueue<Request>.needsRecovery(choices: []))
         #expect(!PickerQueue<Request>.needsRecovery(choices: ["browser"]))
     }
+
+    @Test func resolvingAnUnknownOrAlreadyResolvedRequestLeavesTheQueueAlone() {
+        var queue = PickerQueue<Request>()
+        queue.append(Request(id: 1))
+        queue.append(Request(id: 2))
+        let unknown = queue.resolve(id: 3)
+        #expect(!unknown)
+        _ = queue.resolve(id: 1)
+        let again = queue.resolve(id: 1)
+        #expect(!again)
+        #expect(queue.head?.id == 2)
+        #expect(queue.count == 1)
+    }
 }
