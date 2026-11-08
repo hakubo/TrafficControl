@@ -20,6 +20,17 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         #expect(!settings.canHide(only, among: [only]))
         #expect(settings.canHide(only, among: [only, other]))
         #expect(!settings.canHide(other, among: []))
+        var hidden = settings
+        hidden.hiddenBrowserIDs = [only.browserID]
+        #expect(!hidden.canHide(only, among: [only, other]))
+    }
+
+    @Test func hiddenBrowserProfileCannotBeHidden() {
+        let browser = "com.example.browser"
+        let profile = BrowserTarget(browserID: browser, profileID: "work")
+        var settings = AppSettings()
+        settings.hiddenBrowserIDs = [browser]
+        #expect(!settings.canHide(profile, among: [profile]))
     }
 }
 

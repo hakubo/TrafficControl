@@ -106,8 +106,8 @@ extension AppSettings {
     }
 
     /// Keeps at least one currently visible picker entry available.
-    public func canHide(_ target: BrowserTarget, among visibleTargets: [BrowserTarget]) -> Bool {
-        !isHidden(target) && visibleTargets.count > 1
+    public func canHide(_ target: BrowserTarget, among allTargets: [BrowserTarget]) -> Bool {
+        !isHidden(target) && allTargets.filter { !isHidden($0) }.count > 1
     }
 
     /// Shows or hides one entry. `siblings` are the other profiles of the same browser: showing a
