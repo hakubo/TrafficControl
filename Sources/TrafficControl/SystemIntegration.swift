@@ -20,7 +20,13 @@ final class SettingsModel: ObservableObject {
     init(store: SettingsStore = SettingsStore()) {
         self.settings = store.load()
         self.writer = CoalescingWriter(label: "TrafficControl.settings-writer", delay: .milliseconds(500)) { settings in
-            do { try store.save(settings) } catch { NSLog("TrafficControl: failed to save settings: \(error)") }
+            do {
+                try store.save(settings)
+                return true
+            } catch {
+                NSLog("TrafficControl: failed to save settings: \(error)")
+                return false
+            }
         }
     }
 

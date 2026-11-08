@@ -12,7 +12,10 @@ private final class Recorder: @unchecked Sendable {
 
 private func writer(delay: DispatchTimeInterval) -> (CoalescingWriter<Int>, Recorder) {
     let recorder = Recorder()
-    let writer = CoalescingWriter<Int>(label: "test.coalescing-writer", delay: delay) { recorder.append($0) }
+    let writer = CoalescingWriter<Int>(label: "test.coalescing-writer", delay: delay) {
+        recorder.append($0)
+        return true
+    }
     return (writer, recorder)
 }
 
@@ -64,5 +67,48 @@ private func writer(delay: DispatchTimeInterval) -> (CoalescingWriter<Int>, Reco
         w.flush()
         try await Task.sleep(for: .milliseconds(200))
         #expect(r.written == [1, 3])
+    }
+
+    @Test func failedWriteStaysPendingForTheNextFlush() {
+        let recorder = Recorder()
+        let failing = Failing(times: 1)
+        let w = CoalescingWriter<Int>(label: "test.coalescing-writer", delay: .seconds(60)) { value in
+            guard !failing.next() else { return false }
+            recorder.append(value)
+            return true
+        }
+        w.submit(1)
+        w.flush()
+        #expect(recorder.written.isEmpty)
+        w.flush()
+        #expect(recorder.written == [1])
+    }
+
+    @Test func failedWriteNeverReplacesANewerValue() {
+        let recorder = Recorder()
+        let failing = Failing(times: 1)
+        let w = CoalescingWriter<Int>(label: "test.coalescing-writer", delay: .seconds(60)) { value in
+            guard !failing.next() else { return false }
+            recorder.append(value)
+            return true
+        }
+        w.submit(1)
+        w.flush()
+        w.submit(2)
+        w.flush()
+        #expect(recorder.written == [2])
+    }
+}
+
+/// Fails the first `times` writes.
+private final class Failing: @unchecked Sendable {
+    private let lock = NSLock()
+    private var remaining: Int
+    init(times: Int) { remaining = times }
+    func next() -> Bool {
+        lock.withLock {
+            defer { remaining -= 1 }
+            return remaining > 0
+        }
     }
 }
