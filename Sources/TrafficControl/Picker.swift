@@ -146,13 +146,14 @@ final class PickerController {
         let panel = PickerPanel()
         panel.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
         panel.flagsHandler = { [weak self] flags in self?.flagsChanged(flags) }
-        let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
-        let maxWidth = max(300, (screen?.visibleFrame.width ?? 800) - 16)
+        // One screen and one inset for both the width cap and the position, so the panel always fits.
+        let bounds = Self.pointerScreenBounds()
+        let maxWidth = max(300, bounds.width)
         let host = NSHostingView(rootView: PickerView(model: model, maxWidth: maxWidth))
         panel.contentView = host
         let size = host.fittingSize
         panel.setContentSize(size)
-        panel.setFrameOrigin(origin(for: size))
+        panel.setFrameOrigin(origin(for: size, in: bounds))
 
         self.panel = panel
         self.model = model
@@ -171,11 +172,16 @@ final class PickerController {
         }
     }
 
-    /// Centered on the mouse pointer, kept inside the visible area of its screen.
-    private func origin(for size: NSSize) -> NSPoint {
+    /// The visible area of the pointer's screen, less a small margin: where the picker must fit.
+    private static func pointerScreenBounds() -> NSRect {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        let bounds = (screen?.visibleFrame ?? .zero).insetBy(dx: 8, dy: 8)
+        return (screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 816, height: 616)).insetBy(dx: 8, dy: 8)
+    }
+
+    /// Centered on the mouse pointer, kept inside `bounds`.
+    private func origin(for size: NSSize, in bounds: NSRect) -> NSPoint {
+        let mouse = NSEvent.mouseLocation
         var origin = NSPoint(x: mouse.x - size.width / 2, y: mouse.y - size.height / 2)
         origin.x = min(max(origin.x, bounds.minX), bounds.maxX - size.width)
         origin.y = min(max(origin.y, bounds.minY), bounds.maxY - size.height)
@@ -315,6 +321,8 @@ struct PickerView: View {
     }
 
     private var tilesWidth: CGFloat { CGFloat(model.choices.count) * 88 - 4 }
+    /// More tiles than fit on the screen, so the row scrolls.
+    private var overflows: Bool { tilesWidth > maxWidth - 24 }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -347,11 +355,17 @@ struct PickerView: View {
                             .id(index)
                         }
                     }
-                    .scrollTargetLayout()
                 }
-                .scrollIndicators(.hidden)
-                .scrollTargetBehavior(.viewAligned)
+                // A visible scroller when the row overflows: it shows there is more, and a mouse
+                // without horizontal scrolling can still drag it.
+                .scrollIndicators(overflows ? .visible : .hidden)
                 .frame(width: min(tilesWidth, maxWidth - 24))
+                .onAppear {
+                    // The preselected tile can be anywhere in a long row; start with it in view.
+                    guard overflows else { return }
+                    let selection = model.selection
+                    DispatchQueue.main.async { proxy.scrollTo(selection, anchor: .center) }
+                }
                 .onChange(of: model.selection) { _, selection in
                     withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(selection, anchor: .center) }
                 }
