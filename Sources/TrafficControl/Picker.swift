@@ -26,7 +26,7 @@ final class PickerModel: ObservableObject {
     /// "github.com", the part of the link a remembered pick applies to.
     var domain: String? { LinkAddress.of(url, depth: 0) }
 
-    /// The entry ⌘-Return would remember. A ⌘-click lands on a tile the pointer has just selected.
+    /// The entry ⌘-Return or a ⌘-click would remember.
     var rememberTarget: BrowserChoice? {
         choices.indices.contains(selection) ? choices[selection] : nil
     }
@@ -37,6 +37,15 @@ final class PickerModel: ObservableObject {
     /// is "entered" before the user moves at all; that must not replace the preselected browser.
     func pointerEntered(_ index: Int) {
         if pointerGate.moved(to: NSEvent.mouseLocation) { selection = index }
+    }
+
+    /// A click on a tile. Returns false when the click only selected it: with ⌘ held and a pointer
+    /// that hasn't moved since the picker opened, the banner still names the preselected browser, so
+    /// saving the clicked one would remember a different browser from the one shown.
+    func click(_ index: Int) -> Bool {
+        let confirmed = index == selection || !remembering
+        selection = index
+        return confirmed
     }
 
     init(
@@ -330,7 +339,7 @@ struct PickerView: View {
             HStack(spacing: 4) {
                 ForEach(Array(model.choices.enumerated()), id: \.element.id) { index, choice in
                     Button {
-                        model.onChoose(index, NSEvent.modifierFlags.contains(.shift))
+                        if model.click(index) { model.onChoose(index, NSEvent.modifierFlags.contains(.shift)) }
                     } label: {
                         ChoiceTile(
                             choice: choice, shortcut: index < 9 ? index + 1 : nil, isSelected: index == model.selection,
@@ -342,7 +351,8 @@ struct PickerView: View {
                     .buttonStyle(.plain)
                     // Keys are handled by the panel, so buttons must not take focus.
                     .focusable(false)
-                    .onHover { if $0 { model.pointerEntered(index) } }
+                    // Continuous, so moving within the tile the picker opened under also selects it.
+                    .onContinuousHover { if case .active = $0 { model.pointerEntered(index) } }
                     .accessibilityLabel(Self.accessibilityLabel(for: choice, shortcut: index < 9 ? index + 1 : nil))
                     .accessibilityAddTraits(index == model.selection ? .isSelected : [])
                 }
