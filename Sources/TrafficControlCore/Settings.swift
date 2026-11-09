@@ -105,6 +105,11 @@ extension AppSettings {
         hiddenBrowserIDs.contains(target.browserID) || (target.profileID != nil && hiddenProfiles.contains(target))
     }
 
+    /// Keeps at least one currently visible picker entry available.
+    public func canHide(_ target: BrowserTarget, among allTargets: [BrowserTarget]) -> Bool {
+        !isHidden(target) && allTargets.filter { !isHidden($0) }.count > 1
+    }
+
     /// Shows or hides one entry. `siblings` are the other profiles of the same browser: showing a
     /// profile of a browser hidden as a whole unhides the browser but keeps those siblings hidden.
     public mutating func setHidden(_ hidden: Bool, _ target: BrowserTarget, siblings: [BrowserTarget] = []) {

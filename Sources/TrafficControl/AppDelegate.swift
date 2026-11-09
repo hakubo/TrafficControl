@@ -22,13 +22,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let updater = UpdaterModel()
     let defaultStatus = DefaultBrowserStatus()
     lazy var browsers = BrowserManager()
-    lazy var picker = PickerController(settings: settings, browsers: browsers, history: history)
+    lazy var picker = PickerController(settings: settings, browsers: browsers, history: history) { [weak self] in
+        self?.showBrowserSettings()
+    }
     lazy var router = LinkRouter(settings: settings, browsers: browsers, picker: picker, history: history)
 
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private let menuBar = MenuBarModel()
     private var settingsWindow: NSWindow?
+    private let settingsNavigation = SettingsNavigation()
     private var cancellables: Set<AnyCancellable> = []
     private var receivedLinkAtLaunch = false
     private var overrideTimer: Timer?
@@ -210,9 +213,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func showSettings() {
+        presentSettings(pane: settingsNavigation.pane ?? .general)
+    }
+
+    private func showBrowserSettings() {
+        presentSettings(pane: .browsers)
+    }
+
+    private func presentSettings(pane: SettingsPane) {
+        settingsNavigation.pane = pane
         browsers.refresh()
         if settingsWindow == nil {
-            let root = SettingsView()
+            let root = SettingsView(navigation: settingsNavigation)
                 .environmentObject(settings)
                 .environmentObject(browsers)
                 .environmentObject(history)
@@ -261,6 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard (notification.object as? NSWindow) === settingsWindow else { return }
         NSApp.setActivationPolicy(.accessory)
         settings.flush()
+        picker.settingsDidClose()
     }
 
     /// Never shown while TrafficControl is a menu bar app, but its key equivalents still route

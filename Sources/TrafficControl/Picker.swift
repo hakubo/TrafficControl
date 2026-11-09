@@ -1,8 +1,10 @@
 import AppKit
+import Combine
 import SwiftUI
 import TrafficControlCore
 
-struct PickerRequest {
+struct PickerRequest: Identifiable {
+    let id = UUID()
     let url: URL
     let sourceApp: NSRunningApplication?
 }
@@ -104,18 +106,27 @@ final class PickerController {
     private let settings: SettingsModel
     private let browsers: BrowserManager
     private let history: HistoryModel
-    private var queue: [PickerRequest] = []
+    private let openBrowserSettings: () -> Void
+    private var queue = PickerQueue<PickerRequest>()
     private var panel: PickerPanel?
     private var model: PickerModel?
     private var current: PickerRequest?
     private var monitors: [Any] = []
     /// ⌘ was already down when the picker opened (it can be the picker key), so it only counts once released.
     private var rememberKeyBlocked = false
+    private var recoveryMode = false
+    private var recoveryCancellables = Set<AnyCancellable>()
+    /// The recovery panel stepped aside for Settings. Nothing is shown until Settings closes, so no
+    /// panel covers the toggles the user went there to change; the link stays queued meanwhile.
+    private var recoverySuppressedForSettings = false
+    /// The browser the recovery panel offers, fixed when it is shown so the button and the action agree.
+    private var recoveryBrowserID: String?
 
-    init(settings: SettingsModel, browsers: BrowserManager, history: HistoryModel) {
+    init(settings: SettingsModel, browsers: BrowserManager, history: HistoryModel, openBrowserSettings: @escaping () -> Void = {}) {
         self.settings = settings
         self.browsers = browsers
         self.history = history
+        self.openBrowserSettings = openBrowserSettings
     }
 
     func enqueue(_ request: PickerRequest) {
@@ -124,13 +135,11 @@ final class PickerController {
     }
 
     private func showNext() {
-        guard panel == nil, !queue.isEmpty else { return }
-        let request = queue.removeFirst()
+        guard panel == nil, !recoverySuppressedForSettings, let request = queue.head else { return }
         let s = settings.settings
         let list = browsers.pickerChoices(s, for: request.url)
-        guard !list.isEmpty else {
-            NSSound.beep()
-            showNext()
+        guard !PickerQueue<PickerRequest>.needsRecovery(choices: list) else {
+            showRecovery(for: request)
             return
         }
 
@@ -174,6 +183,7 @@ final class PickerController {
         self.panel = panel
         self.model = model
         self.current = request
+        recoveryMode = false
         panel.makeKeyAndOrderFront(nil)
         panel.invalidateShadow()
 
@@ -181,11 +191,134 @@ final class PickerController {
         if let m = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown],
             handler: { [weak self] _ in
-                MainActor.assumeIsolated { self?.dismiss() }
+                MainActor.assumeIsolated {
+                    guard let self, !self.recoveryMode else { return }
+                    self.cancelCurrent()
+                }
             })
         {
             monitors.append(m)
         }
+    }
+
+    private func showRecovery(for request: PickerRequest) {
+        let panel = PickerPanel()
+        panel.level = .floating
+        panel.keyHandler = { [weak self] event in self?.handleRecoveryKey(event) ?? false }
+        let browser = preferredRecoveryBrowser()
+        recoveryBrowserID = browser?.id
+        let installed = !browsers.installed.isEmpty
+        let host = NSHostingView(
+            rootView: EmptyPickerRecoveryView(
+                url: request.url,
+                browserName: browser?.name,
+                hasInstalledBrowsers: installed,
+                openSettings: { [weak self] in
+                    self?.hideRecoveryForSettings(); self?.openBrowserSettings()
+                },
+                copyLink: { [weak self] in self?.copyCurrentLink() },
+                openBrowser: { [weak self] in self?.openRecoveryBrowser() },
+                cancel: { [weak self] in self?.cancelCurrent() }))
+        panel.contentView = host
+        let size = host.fittingSize
+        panel.setContentSize(size)
+        panel.setFrameOrigin(origin(for: size, in: Self.pointerScreenBounds()))
+        self.panel = panel
+        self.current = request
+        recoveryMode = true
+        panel.makeKeyAndOrderFront(nil)
+        panel.invalidateShadow()
+        recoveryCancellables.removeAll()
+        settings.$settings.dropFirst().sink { [weak self] _ in
+            Task { @MainActor in self?.reevaluateRecovery() }
+        }.store(in: &recoveryCancellables)
+        browsers.$installed.dropFirst().sink { [weak self] _ in
+            Task { @MainActor in self?.reevaluateRecovery() }
+        }.store(in: &recoveryCancellables)
+        browsers.$profiles.dropFirst().sink { [weak self] _ in
+            Task { @MainActor in self?.reevaluateRecovery() }
+        }.store(in: &recoveryCancellables)
+    }
+
+    private func preferredRecoveryBrowser() -> Browser? {
+        let installed = browsers.installed
+        let primary = settings.settings.primaryBrowser.flatMap { target in installed.first { $0.id == target.browserID } }
+        let lastActive = browsers.lastActiveBrowserID.flatMap { id in installed.first { $0.id == id } }
+        return primary ?? lastActive ?? installed.first
+    }
+
+    private func hideRecoveryForSettings() {
+        // The link stays at the head of the queue; settingsDidClose shows the picker or recovery again.
+        dismissPanelOnly()
+        recoverySuppressedForSettings = true
+    }
+
+    /// The Settings window closed: show whatever the queued link needs now, the picker if a browser
+    /// was made visible, else the recovery panel again.
+    func settingsDidClose() {
+        guard recoverySuppressedForSettings else { return }
+        recoverySuppressedForSettings = false
+        showNext()
+    }
+
+    /// Settings, browsers or profiles changed while the recovery panel is up: show the picker if the
+    /// link has choices now, else rebuild the panel so it offers what is installed now.
+    private func reevaluateRecovery() {
+        guard recoveryMode, panel != nil, let current else { return }
+        dismissPanelOnly()
+        if browsers.pickerChoices(settings.settings, for: current.url).isEmpty {
+            showRecovery(for: current)
+        } else {
+            showNext()
+        }
+    }
+
+    private func openRecoveryBrowser() {
+        guard let current, let id = recoveryBrowserID else { return }
+        guard let installed = browsers.browser(withID: id) else {
+            // Uninstalled while the panel was up: offer what is there now, and keep the link.
+            dismissPanelOnly()
+            showRecovery(for: current)
+            return
+        }
+        let primaryProfile = settings.settings.primaryBrowser.flatMap { target in
+            target.browserID == installed.id ? target.profileID : nil
+        }
+        browsers.openOrSwitch(current.url, in: installed, profileID: primaryProfile, inBackground: false, reuseTab: false)
+        cancelCurrent()
+    }
+
+    private func handleRecoveryKey(_ event: NSEvent) -> Bool {
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        if mods.contains(.command) {
+            switch chars {
+            case "c": copyCurrentLink(); return true
+            case "w", ".": cancelCurrent(); return true
+            case ",": hideRecoveryForSettings(); openBrowserSettings(); return true
+            default: break
+            }
+        }
+        switch event.keyCode {
+        case 53: cancelCurrent(); return true
+        case 36, 76:
+            if recoveryBrowserID != nil { openRecoveryBrowser() } else { copyCurrentLink() }
+            return true
+        default: return false
+        }
+    }
+
+    private func copyCurrentLink() {
+        guard let current else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(current.url.absoluteString, forType: .string)
+        cancelCurrent()
+    }
+
+    private func cancelCurrent() {
+        guard panel != nil, let current else { return }
+        queue.resolve(id: current.id)
+        dismiss()
     }
 
     /// The visible area of the pointer's screen, less a small margin: where the picker must fit.
@@ -221,7 +354,7 @@ final class PickerController {
 
         switch event.keyCode {
         case 53:  // escape
-            dismiss()
+            cancelCurrent()
             return true
         case 36, 76:  // return, keypad enter
             choose(model.selection, inBackground: background, remember: remember)
@@ -241,10 +374,10 @@ final class PickerController {
             case "c":
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(model.url.absoluteString, forType: .string)
-                dismiss()
+                cancelCurrent()
                 return true
             case "w", ".":
-                dismiss()
+                cancelCurrent()
                 return true
             default:
                 break
@@ -279,26 +412,37 @@ final class PickerController {
         if remember, choice.deepLink == nil { settings.settings.rules.remember(current.url, to: choice.target) }
         if let deepLink = choice.deepLink {
             browsers.openInApp(deepLink, bundleID: choice.browser.id)
-            dismiss()
+            cancelCurrent()
             return
         }
-        dismiss()
+        // Resolve before opening: the open is queued off the main actor and the picker closes at once.
+        cancelCurrent()
         browsers.openOrSwitch(
             current.url, in: choice.browser, profileID: choice.profile?.id, inBackground: inBackground,
             reuseTab: settings.settings.tabReuse != .off)
     }
 
     private func dismiss() {
+        guard panel != nil else { return }
+        dismissPanelOnly()
+        DispatchQueue.main.async { [weak self] in self?.showNext() }
+    }
+
+    private func dismissPanelOnly() {
         guard let panel else { return }
         monitors.forEach(NSEvent.removeMonitor)
         monitors.removeAll()
         self.panel = nil
         self.model = nil
         self.current = nil
+        recoveryMode = false
+        recoverySuppressedForSettings = false
+        recoveryBrowserID = nil
+        recoveryCancellables.removeAll()
         rememberKeyBlocked = false
         panel.orderOut(nil)
-        DispatchQueue.main.async { [weak self] in self?.showNext() }
     }
+
 }
 
 // MARK: - View
@@ -479,6 +623,48 @@ struct PickerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.amber.opacity(0.14)))
         .accessibilityHidden(!model.remembering)
+    }
+}
+
+private struct EmptyPickerRecoveryView: View {
+    let url: URL
+    let browserName: String?
+    let hasInstalledBrowsers: Bool
+    let openSettings: () -> Void
+    let copyLink: () -> Void
+    let openBrowser: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("No picker destinations are available")
+                .font(.headline)
+            Text(hasInstalledBrowsers ? "This link is still waiting. Show a browser in Settings, open it directly, copy the link, or cancel." : "No browsers found. Install one, or copy the link.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(url.absoluteString)
+                .font(.system(.caption, design: .monospaced))
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .help(url.absoluteString)
+            HStack {
+                Button("Open Settings") { openSettings() }
+                if let browserName {
+                    Button("Open in \(browserName)", action: openBrowser).keyboardShortcut(.defaultAction)
+                }
+                Spacer()
+                Button("Copy Link", action: copyLink)
+                Button("Cancel", action: cancel)
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 410)
+        .background(VisualEffectBackground())
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
     }
 }
 

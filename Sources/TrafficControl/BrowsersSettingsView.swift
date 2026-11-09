@@ -19,6 +19,7 @@ struct BrowsersSettingsView: View {
                         BrowserChoiceRow(
                             choice: choice,
                             isVisible: visibility(of: choice, among: choices),
+                            canHide: model.settings.canHide(choice.target, among: choices.map(\.target)),
                             isPrimary: isPrimary(choice))
                     },
                     onReorder: { model.settings.choiceOrder = $0.map(\.target) }
@@ -49,6 +50,7 @@ struct BrowsersSettingsView: View {
 private struct BrowserChoiceRow: View {
     let choice: BrowserChoice
     @Binding var isVisible: Bool
+    let canHide: Bool
     let isPrimary: Bool
 
     var body: some View {
@@ -69,10 +71,13 @@ private struct BrowserChoiceRow: View {
                     .padding(.horizontal, 7).padding(.vertical, 2)
                     .background(.tint.opacity(0.12), in: Capsule())
             }
-            Toggle("", isOn: $isVisible)
+            Toggle("Show \(choice.title) in picker", isOn: $isVisible)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                .disabled(isVisible && !canHide)
+                .accessibilityHint(isVisible && !canHide ? "At least one picker destination must stay visible." : "")
+                .modifier(LockedToggleHelp(isLocked: isVisible && !canHide))
         }
         .opacity(isVisible ? 1 : 0.55)
     }
@@ -84,5 +89,17 @@ private struct BrowserChoiceRow: View {
 
     private var icon: some View {
         BrowserIcon(browser: choice.browser, hasProfile: choice.profile != nil, avatar: choice.avatar)
+    }
+}
+
+private struct LockedToggleHelp: ViewModifier {
+    let isLocked: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if isLocked {
+            content.help("At least one picker destination must stay visible.")
+        } else {
+            content
+        }
     }
 }

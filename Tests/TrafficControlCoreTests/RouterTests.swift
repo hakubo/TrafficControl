@@ -11,6 +11,29 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     LinkContext(url: URL(string: string)!, sourceBundleID: source, sourceAppName: name)
 }
 
+@Suite struct PickerVisibilityTests {
+    @Test func cannotHideLastVisibleEntry() {
+        let only = BrowserTarget(browserID: "com.example.browser")
+        let other = BrowserTarget(browserID: "com.example.other")
+        let settings = AppSettings()
+
+        #expect(!settings.canHide(only, among: [only]))
+        #expect(settings.canHide(only, among: [only, other]))
+        #expect(!settings.canHide(other, among: []))
+        var hidden = settings
+        hidden.hiddenBrowserIDs = [only.browserID]
+        #expect(!hidden.canHide(only, among: [only, other]))
+    }
+
+    @Test func hiddenBrowserProfileCannotBeHidden() {
+        let browser = "com.example.browser"
+        let profile = BrowserTarget(browserID: browser, profileID: "work")
+        var settings = AppSettings()
+        settings.hiddenBrowserIDs = [browser]
+        #expect(!settings.canHide(profile, among: [profile]))
+    }
+}
+
 @Suite struct ConditionTests {
     @Test func domainMatchesItselfAndSubdomainsOnly() {
         let c = Condition(field: .host, op: .isDomain, value: "github.com")
