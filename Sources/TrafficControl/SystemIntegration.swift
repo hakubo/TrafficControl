@@ -3,21 +3,36 @@ import ServiceManagement
 import Sparkle
 import TrafficControlCore
 
-/// Settings that persist to disk on every change.
+/// Settings that persist to disk after every change. Rule fields bind straight into `settings`, so
+/// typing changes it on every keystroke: the model updates at once, but the encode and write are
+/// coalesced and run on a background queue.
 @MainActor
 final class SettingsModel: ObservableObject {
     @Published var settings: AppSettings {
         didSet {
             guard settings != oldValue else { return }
-            do { try store.save(settings) } catch { NSLog("TrafficControl: failed to save settings: \(error)") }
+            writer.submit(settings)
         }
     }
 
-    private let store: SettingsStore
+    private let writer: CoalescingWriter<AppSettings>
 
     init(store: SettingsStore = SettingsStore()) {
-        self.store = store
         self.settings = store.load()
+        self.writer = CoalescingWriter(label: "TrafficControl.settings-writer", delay: .milliseconds(500)) { settings in
+            do {
+                try store.save(settings)
+                return true
+            } catch {
+                NSLog("TrafficControl: failed to save settings: \(error)")
+                return false
+            }
+        }
+    }
+
+    /// Writes any pending change and waits for it. Call when the app quits or Settings closes.
+    func flush() {
+        writer.flush()
     }
 }
 

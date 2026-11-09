@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Typing in Settings no longer rewrites settings.json on every keystroke. Changes are saved half a
+  second after you stop, off the main thread, and anything unsaved is written when Settings closes
+  or TrafficControl quits.
+- With tab reuse enabled, Automation consent is requested separately for each running browser. Links keep opening while you decide; later links can reuse tabs once allowed.
+- Checking for an already-open tab no longer freezes the picker or Settings. If a browser takes too long to respond, the link opens normally.
+- Holding ⌘ in the picker now names the browser that ⌘Return will actually remember. Moving the
+  pointer onto a browser selects it, so the highlighted tile, the "Always open" banner and what Return
+  or ⌘-click saves can no longer point at different browsers.
+- The browser picker stays within the screen and lets you scroll to every browser profile.
 - Links stay available when the picker has no visible destinations, with options to open a browser, copy the link, or adjust browser settings.
 
 ## 0.3.1

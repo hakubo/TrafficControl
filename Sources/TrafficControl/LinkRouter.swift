@@ -84,33 +84,35 @@ final class LinkRouter {
             Timing.note("\(url.host() ?? "?") -> \(decision)")
             let overridden = override.map { $0.isActive(at: environment.now) && decision == .open($0.target, ruleID: nil) } ?? false
 
-            // Already open somewhere? Go there instead of opening a duplicate. Desktop apps still win,
-            // the picker key skips this so the picker always appears, and so does a rule that asks
-            // for held keys: holding them says where you want the link. An override keeps links in
-            // its browser (say, the one being screen-shared), so it skips this too.
-            if current.tabReuse == .anyBrowser, !forcePicker, !decision.isApp, !overridden,
-                !Self.ruleUsesKeys(decision, in: current.rules),
-                let tab = Timing.measure("find open tab (any browser)") { OpenTabFinder.find(url, in: tabSearchOrder(decision)) },
-                Timing.measure("focus tab") { OpenTabFinder.focus(tab) }
-            {
-                continue
-            }
+            let searchOrder = tabSearchOrder(decision)
+            browsers.linkWork.enqueue { [self] in
+                // Already open somewhere? Go there instead of opening a duplicate. Desktop apps still win,
+                // the picker key skips this so the picker always appears, and so does a rule that asks
+                // for held keys: holding them says where you want the link. An override keeps links in
+                // its browser (say, the one being screen-shared), so it skips this too.
+                if current.tabReuse == .anyBrowser, !forcePicker, !decision.isApp, !overridden,
+                    !Self.ruleUsesKeys(decision, in: current.rules),
+                    await OpenTabFinder.reuse(url, in: searchOrder)
+                {
+                    return
+                }
 
-            switch decision {
-            case .open(let target, _):
-                if let browser = browsers.browser(withID: target.browserID) {
-                    browsers.openOrSwitch(
-                        url, in: browser, profileID: target.profileID, inBackground: false,
-                        reuseTab: current.tabReuse == .targetBrowser)
-                    if current.rememberDomains { history.record(url, destination: .browser(target)) }
-                } else {
+                switch decision {
+                case .open(let target, _):
+                    if let browser = browsers.browser(withID: target.browserID) {
+                        await browsers.openOrSwitchNow(
+                            url, in: browser, profileID: target.profileID, inBackground: false,
+                            reuseTab: current.tabReuse == .targetBrowser)
+                        if current.rememberDomains { history.record(url, destination: .browser(target)) }
+                    } else {
+                        picker.enqueue(PickerRequest(url: url, sourceApp: source))
+                    }
+                case .openInApp(let bundleID, let deepLink):
+                    browsers.openInApp(deepLink, bundleID: bundleID)
+                    if current.rememberDomains { history.record(url, destination: .app(bundleID: bundleID)) }
+                case .ask:
                     picker.enqueue(PickerRequest(url: url, sourceApp: source))
                 }
-            case .openInApp(let bundleID, let deepLink):
-                browsers.openInApp(deepLink, bundleID: bundleID)
-                if current.rememberDomains { history.record(url, destination: .app(bundleID: bundleID)) }
-            case .ask:
-                picker.enqueue(PickerRequest(url: url, sourceApp: source))
             }
         }
     }

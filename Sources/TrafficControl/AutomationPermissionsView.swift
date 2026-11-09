@@ -2,7 +2,7 @@ import SwiftUI
 import TrafficControlCore
 
 /// Each supported browser's Automation permission, with a button that asks macOS for the missing ones now
-/// instead of on the first link click.
+/// before a link triggers a separate, non-blocking consent request.
 struct AutomationPermissionsView: View {
     @EnvironmentObject private var browsers: BrowserManager
     @State private var statuses: [String: OpenTabFinder.Permission] = [:]
@@ -78,7 +78,6 @@ struct AutomationPermissionsView: View {
     private func apply(_ found: [String: OpenTabFinder.Permission]) {
         for (id, status) in found {
             statuses[id] = status
-            OpenTabFinder.note(status, for: id)
         }
     }
 }

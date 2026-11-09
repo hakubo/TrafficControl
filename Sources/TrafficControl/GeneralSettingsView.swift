@@ -67,8 +67,10 @@ struct GeneralSettingsView: View {
             } header: {
                 Text("Open tabs")
             } footer: {
-                Text("Works with Safari and Chrome-based browsers (Chrome, Brave, Edge, Vivaldi, Chromium). macOS asks once per browser whether TrafficControl may control it.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "Works with Safari and Chrome-based browsers (Chrome, Brave, Edge, Vivaldi, Chromium). When reuse is enabled, macOS asks for permission to control each running browser. The first link opens normally while you decide; later links can reuse tabs once allowed."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("Picker") {
