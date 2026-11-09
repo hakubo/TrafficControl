@@ -53,6 +53,8 @@ struct BrowserChoice: Identifiable {
 /// Finds installed browsers, tracks which ones are running and opens links in them.
 @MainActor
 final class BrowserManager: ObservableObject {
+    let linkWork = LinkWorkQueue()
+
     @Published private(set) var installed: [Browser] = []
     /// Profiles of Chromium-based browsers, keyed by bundle identifier.
     @Published private(set) var profiles: [String: [BrowserProfile]] = [:]
@@ -211,15 +213,18 @@ final class BrowserManager: ObservableObject {
 
     /// Switches to a tab of `browser` already showing the link when `reuseTab` is set, otherwise opens it.
     func openOrSwitch(_ url: URL, in browser: Browser, profileID: String?, inBackground: Bool, reuseTab: Bool) {
-        if reuseTab, let tab = Timing.measure("find open tab (target browser)", { OpenTabFinder.find(url, in: [browser.id]) }),
-            Timing.measure("focus tab", { OpenTabFinder.focus(tab, activate: !inBackground) })
-        {
-            return
+        linkWork.enqueue { [self] in
+            await openOrSwitchNow(url, in: browser, profileID: profileID, inBackground: inBackground, reuseTab: reuseTab)
         }
+    }
+
+    /// Used by routing, which already owns a place in the link queue.
+    func openOrSwitchNow(_ url: URL, in browser: Browser, profileID: String?, inBackground: Bool, reuseTab: Bool) async {
+        if reuseTab, await OpenTabFinder.reuse(url, in: [browser.id], activate: !inBackground) { return }
         open([url], in: browser, profileID: profileID, inBackground: inBackground)
     }
 
-    func open(_ urls: [URL], in browser: Browser, profileID: String? = nil, inBackground: Bool) {
+    private func open(_ urls: [URL], in browser: Browser, profileID: String? = nil, inBackground: Bool) {
         let config = NSWorkspace.OpenConfiguration()
         config.activates = !inBackground
         let start = ContinuousClock.now
@@ -236,13 +241,11 @@ final class BrowserManager: ObservableObject {
             ChromiumSingleton.queue.async {
                 if ChromiumSingleton.send(bundleID: browser.id, executable: executable, arguments: arguments) {
                     Timing.report("hand off to \(browser.name) for profile \(profileID) via socket", since: start)
-                    return
-                }
-                DispatchQueue.main.async { [weak self] in
-                    MainActor.assumeIsolated {
+                } else {
+                    DispatchQueue.main.async { [weak self] in
                         self?.launch(
-                            executable, arguments: arguments, browser: browser, profileID: profileID, activates: activates,
-                            start: start)
+                            executable, arguments: arguments, browser: browser, profileID: profileID,
+                            activates: activates, start: start)
                     }
                 }
             }

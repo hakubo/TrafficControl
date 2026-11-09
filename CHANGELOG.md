@@ -5,6 +5,9 @@
 - Typing in Settings no longer rewrites settings.json on every keystroke. Changes are saved half a
   second after you stop, off the main thread, and anything unsaved is written when Settings closes
   or TrafficControl quits.
+- With tab reuse enabled, Automation consent is requested separately for each running browser. Links keep opening while you decide; later links can reuse tabs once allowed.
+
+- Checking for an already-open tab no longer freezes the picker or Settings. If a browser takes too long to respond, the link opens normally.
 
 ## 0.3.1
 
