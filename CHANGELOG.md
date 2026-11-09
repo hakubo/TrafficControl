@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Typing in Settings no longer rewrites settings.json on every keystroke. Changes are saved half a
+  second after you stop, off the main thread, and anything unsaved is written when Settings closes
+  or TrafficControl quits.
+
 ## 0.3.1
 
 - Links that open in a Chrome (or other Chromium) profile go straight to the running browser over its
