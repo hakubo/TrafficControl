@@ -11,6 +11,7 @@
 - Holding ⌘ in the picker now names the browser that ⌘Return will actually remember. Moving the
   pointer onto a browser selects it, so the highlighted tile, the "Always open" banner and what Return
   or ⌘-click saves can no longer point at different browsers.
+- The browser picker stays within the screen and lets you scroll to every browser profile.
 
 ## 0.3.1
 

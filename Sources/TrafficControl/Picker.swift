@@ -162,11 +162,14 @@ final class PickerController {
         let panel = PickerPanel()
         panel.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
         panel.flagsHandler = { [weak self] flags in self?.flagsChanged(flags) }
-        let host = NSHostingView(rootView: PickerView(model: model))
+        // One screen and one inset for both the width cap and the position, so the panel always fits.
+        let bounds = Self.pointerScreenBounds()
+        let maxWidth = max(300, bounds.width)
+        let host = NSHostingView(rootView: PickerView(model: model, maxWidth: maxWidth))
         panel.contentView = host
         let size = host.fittingSize
         panel.setContentSize(size)
-        panel.setFrameOrigin(origin(for: size))
+        panel.setFrameOrigin(origin(for: size, in: bounds))
 
         self.panel = panel
         self.model = model
@@ -185,11 +188,16 @@ final class PickerController {
         }
     }
 
-    /// Centered on the mouse pointer, kept inside the visible area of its screen.
-    private func origin(for size: NSSize) -> NSPoint {
+    /// The visible area of the pointer's screen, less a small margin: where the picker must fit.
+    private static func pointerScreenBounds() -> NSRect {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        let bounds = (screen?.visibleFrame ?? .zero).insetBy(dx: 8, dy: 8)
+        return (screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 816, height: 616)).insetBy(dx: 8, dy: 8)
+    }
+
+    /// Centered on the mouse pointer, kept inside `bounds`.
+    private func origin(for size: NSSize, in bounds: NSRect) -> NSPoint {
+        let mouse = NSEvent.mouseLocation
         var origin = NSPoint(x: mouse.x - size.width / 2, y: mouse.y - size.height / 2)
         origin.x = min(max(origin.x, bounds.minX), bounds.maxX - size.width)
         origin.y = min(max(origin.y, bounds.minY), bounds.maxY - size.height)
@@ -297,6 +305,7 @@ final class PickerController {
 
 struct PickerView: View {
     @ObservedObject var model: PickerModel
+    let maxWidth: CGFloat
 
     /// "Chrome, Buffer profile, 2": parts that don't exist are left out.
     private static func accessibilityLabel(for choice: BrowserChoice, shortcut: Int?) -> String {
@@ -328,38 +337,59 @@ struct PickerView: View {
     }
 
     private var tilesWidth: CGFloat { CGFloat(model.choices.count) * 88 - 4 }
+    /// More tiles than fit on the screen, so the row scrolls.
+    private var overflows: Bool { tilesWidth > maxWidth - 24 }
 
     var body: some View {
         VStack(spacing: 0) {
             if model.showURL {
                 linkChip
-                    .frame(width: max(tilesWidth, 300))
+                    .frame(width: min(max(tilesWidth, 300), maxWidth - 24))
                     .padding(.bottom, 10)
             }
-            HStack(spacing: 4) {
-                ForEach(Array(model.choices.enumerated()), id: \.element.id) { index, choice in
-                    Button {
-                        if model.click(index) { model.onChoose(index, NSEvent.modifierFlags.contains(.shift)) }
-                    } label: {
-                        ChoiceTile(
-                            choice: choice, shortcut: index < 9 ? index + 1 : nil, isSelected: index == model.selection,
-                            isPinned: model.remembering && index == model.selection,
-                            remembering: model.remembering
-                        )
-                        .contentShape(Rectangle())
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 4) {
+                        ForEach(Array(model.choices.enumerated()), id: \.element.id) { index, choice in
+                            Button {
+                                if model.click(index) { model.onChoose(index, NSEvent.modifierFlags.contains(.shift)) }
+                            } label: {
+                                ChoiceTile(
+                                    choice: choice, shortcut: index < 9 ? index + 1 : nil, isSelected: index == model.selection,
+                                    isPinned: model.remembering && index == model.selection,
+                                    remembering: model.remembering
+                                )
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            // Keys are handled by the panel, so buttons must not take focus.
+                            .focusable(false)
+                            // Continuous, so moving within the tile the picker opened under also selects it.
+                            .onContinuousHover { if case .active = $0 { model.pointerEntered(index) } }
+                            .accessibilityLabel(Self.accessibilityLabel(for: choice, shortcut: index < 9 ? index + 1 : nil))
+                            .accessibilityAddTraits(index == model.selection ? .isSelected : [])
+                            .id(index)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    // Keys are handled by the panel, so buttons must not take focus.
-                    .focusable(false)
-                    // Continuous, so moving within the tile the picker opened under also selects it.
-                    .onContinuousHover { if case .active = $0 { model.pointerEntered(index) } }
-                    .accessibilityLabel(Self.accessibilityLabel(for: choice, shortcut: index < 9 ? index + 1 : nil))
-                    .accessibilityAddTraits(index == model.selection ? .isSelected : [])
+                }
+                // A visible scroller when the row overflows: it shows there is more, and a mouse
+                // without horizontal scrolling can still drag it.
+                .scrollIndicators(overflows ? .visible : .hidden)
+                .frame(width: min(tilesWidth, maxWidth - 24))
+                .onAppear {
+                    // The preselected tile can be anywhere in a long row; start with it in view.
+                    guard overflows else { return }
+                    let selection = model.selection
+                    DispatchQueue.main.async { proxy.scrollTo(selection, anchor: .center) }
+                }
+                .onChange(of: model.selection) { _, selection in
+                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(selection, anchor: .center) }
                 }
             }
             footer.padding(.top, 9)
         }
         .padding(12)
+        .frame(maxWidth: maxWidth)
         .background(VisualEffectBackground())
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
