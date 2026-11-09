@@ -8,6 +8,9 @@
 - With tab reuse enabled, Automation consent is requested separately for each running browser. Links keep opening while you decide; later links can reuse tabs once allowed.
 
 - Checking for an already-open tab no longer freezes the picker or Settings. If a browser takes too long to respond, the link opens normally.
+- Holding ⌘ in the picker now names the browser that ⌘Return will actually remember. Moving the
+  pointer onto a browser selects it, so the highlighted tile, the "Always open" banner and what Return
+  or ⌘-click saves can no longer point at different browsers.
 
 ## 0.3.1
 
