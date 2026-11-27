@@ -222,7 +222,9 @@ public struct SlackLink: Equatable, Sendable {
             // p1700000100654321 is the message timestamp 1700000100.654321 without its dot.
             let message = match.2.map { String($0.dropLast(6) + "." + $0.suffix(6)) }
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            let thread = message == nil ? nil
+            let thread =
+                message == nil
+                ? nil
                 : query.first(where: { $0.name == "thread_ts" })?.value.flatMap { $0.wholeMatch(of: #/\d+\.\d+/#) != nil ? $0 : nil }
             target = .channel(String(match.1), message: message, thread: thread)
         } else if let match = path.firstMatch(of: #/^\/files\/[UW][A-Z0-9]+\/(F[A-Z0-9]+)(?:\/|$)/#) {
