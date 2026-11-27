@@ -79,8 +79,10 @@ struct AppsSettingsView: View {
         } header: {
             Text("Slack workspaces")
         } footer: {
-            Text("The Slack app needs each workspace's ID, which links don't include. The first link from a workspace looks it up on slack.com and adds it here. To add one by hand, open the workspace in a browser: the ID is the T… in app.slack.com/client/T…/, and you can paste that whole address.")
-                .font(.caption).foregroundStyle(.secondary)
+            Text(
+                "The Slack app needs each workspace's ID, which links don't include. The first link from a workspace looks it up on slack.com and adds it here. To add one by hand, open the workspace in a browser: the ID is the T… in app.slack.com/client/T…/, and you can paste that whole address."
+            )
+            .font(.caption).foregroundStyle(.secondary)
         }
     }
 
