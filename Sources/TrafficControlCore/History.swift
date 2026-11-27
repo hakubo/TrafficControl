@@ -198,7 +198,7 @@ public struct LinkHistory: Codable, Equatable, Sendable {
 }
 
 extension Rule {
-    /// A rule for a domain or a path on it ("github.com", "github.com/buffer"): Domain is …, including
+    /// A rule for a domain or a path on it ("github.com", "github.com/acme"): Domain is …, including
     /// subdomains, and for a path also Path is …, including sub-paths.
     public static func forAddress(_ address: String, to target: BrowserTarget?) -> Rule {
         let address = LinkAddress.normalize(address)

@@ -28,6 +28,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var rules: [Rule] = []
     /// Per `AppLink.id`; apps not listed use `defaultAppLinkMode`.
     public var appLinkModes: [String: AppLinkMode] = [:]
+    /// Slack workspace subdomain ("acme" for acme.slack.com) to its team ID ("T0123ABCD").
+    public var slackWorkspaces: [String: String] = [:]
     public var showURLInPicker = true
     public var showMenuBarIcon = true
     /// Holding `pickerModifier` while clicking a link skips everything and shows the picker.
@@ -44,8 +46,28 @@ public struct AppSettings: Codable, Equatable, Sendable {
         appLinkModes[id] ?? Self.defaultAppLinkMode
     }
 
+    public func slackTeamID(forWorkspace workspace: String) -> String? {
+        slackWorkspaces[workspace.lowercased()]
+    }
+
+    /// The workspace subdomain from "acme", "acme.slack.com" or a full workspace URL; nil if it isn't one.
+    public static func slackWorkspace(from input: String) -> String? {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let host = URL(string: text)?.host() { text = host }
+        if text.hasSuffix(".slack.com") { text = String(text.dropLast(".slack.com".count)) }
+        guard !text.isEmpty, text != "app", text.wholeMatch(of: #/[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)*/#) != nil else { return nil }
+        return text
+    }
+
+    /// A team ID typed or pasted on its own or inside an app.slack.com/client/<ID>/… address.
+    public static func slackTeamID(from input: String) -> String? {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let match = text.firstMatch(of: #/app\.slack\.com\/client\/([TE][A-Z0-9]{6,})/#) { return String(match.1) }
+        return text.wholeMatch(of: #/[TE][A-Z0-9]{6,}/#) != nil ? text : nil
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case defaultBehavior, primaryBrowser, choiceOrder, hiddenBrowserIDs, hiddenProfiles, rules, appLinkModes
+        case defaultBehavior, primaryBrowser, choiceOrder, hiddenBrowserIDs, hiddenProfiles, rules, appLinkModes, slackWorkspaces
         case showURLInPicker, showMenuBarIcon, forcePickerWithKey = "forcePickerWithOption", pickerModifier, rememberDomains, tabReuse
     }
 
@@ -74,6 +96,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         hiddenProfiles = try c.decodeIfPresent([BrowserTarget].self, forKey: .hiddenProfiles) ?? d.hiddenProfiles
         rules = try c.decodeIfPresent([Rule].self, forKey: .rules) ?? d.rules
         appLinkModes = try c.decodeIfPresent([String: AppLinkMode].self, forKey: .appLinkModes) ?? d.appLinkModes
+        slackWorkspaces = try c.decodeIfPresent([String: String].self, forKey: .slackWorkspaces) ?? d.slackWorkspaces
         showURLInPicker = try c.decodeIfPresent(Bool.self, forKey: .showURLInPicker) ?? d.showURLInPicker
         showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? d.showMenuBarIcon
         forcePickerWithKey = try c.decodeIfPresent(Bool.self, forKey: .forcePickerWithKey) ?? d.forcePickerWithKey

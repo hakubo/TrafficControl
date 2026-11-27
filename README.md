@@ -47,10 +47,17 @@ TrafficControl updates itself: it checks daily and installs new versions (from 0
   - Figma: design, FigJam, Slides, Sites and Make files, prototypes, decks → `figma://…`
   - Zoom: meeting links `zoom.us/j/…` → `zoommtg://…`
   - Spotify: tracks, albums, artists, playlists, podcasts → `spotify:…`
+  - Slack: channel, message and thread links on `<workspace>.slack.com/archives/…` and
+    `app.slack.com/client/…` → `slack://channel?team=…`; lists → `slack://list?…`, canvases →
+    `slack://doc?…`, files → `slack://file?…`, the Files page → `slack://files?team=…`. Slack's app needs the workspace ID, which
+    permalinks don't carry. The first link from a workspace looks it up with Slack's sign-in endpoint
+    (`slack.com/api/auth.findTeam`, only the subdomain is sent) and saves it in Settings → Apps, where
+    workspaces can also be added or removed by hand. If the lookup fails, links from that workspace
+    open in the browser until TrafficControl restarts.
 
   When the picker shows such a link, the app is offered as the first choice.
 - **Rules**, checked top to bottom, first match wins. A rule's conditions can look at:
-  - domain (`is, including subdomains`) and path (`is, including sub-paths`), so `github.com` + `/buffer`
+  - domain (`is, including subdomains`) and path (`is, including sub-paths`), so `github.com` + `/acme`
     can go to your work profile and `github.com` + `/hakubo` to your personal one
   - full URL
   - source app (bundle ID or name, e.g. links clicked in Slack)

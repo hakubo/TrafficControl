@@ -4,7 +4,7 @@ import TrafficControlCore
 /// The sidebar list of domains you've opened links on, each one a click away from becoming a rule.
 struct HistoryList: View {
     @Binding var selection: String?
-    /// Address ("github.com" or "github.com/buffer") and the browser to send it to.
+    /// Address ("github.com" or "github.com/acme") and the browser to send it to.
     let onCreateRule: (String, BrowserTarget?) -> Void
     @EnvironmentObject private var model: SettingsModel
     @EnvironmentObject private var browsers: BrowserManager
@@ -175,7 +175,7 @@ struct DomainDetailView: View {
     }
 }
 
-/// The enabled rule that would catch a link to this address ("github.com" or "github.com/buffer"), if any.
+/// The enabled rule that would catch a link to this address ("github.com" or "github.com/acme"), if any.
 func coveringRule(for address: String, in rules: [Rule]) -> Rule? {
     guard let url = URL(string: "https://\(address)/") else { return nil }
     return Router.firstMatchingRule(LinkContext(url: url), in: rules)

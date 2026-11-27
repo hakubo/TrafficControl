@@ -92,7 +92,7 @@ public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
         case .address: "github.com/hakubo"
         case .host: "github.com"
         case .url: "https://example.com/*"
-        case .path: "/buffer"
+        case .path: "/acme"
         case .sourceApp: "com.tinyspeck.slackmacgap or Slack"
         case .modifiers: "⌘"
         }
@@ -100,8 +100,8 @@ public enum ConditionField: String, Codable, CaseIterable, Sendable, Hashable {
 }
 
 public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable {
-    /// The address or path itself, or anything below it: "github.com/buffer" matches
-    /// "github.com/buffer/api" and "eu.github.com/buffer", not "github.com/buffer-x".
+    /// The address or path itself, or anything below it: "github.com/acme" matches
+    /// "github.com/acme/api" and "eu.github.com/acme", not "github.com/acme-x".
     case isUnder
     case isDomain
     case equals
@@ -162,7 +162,7 @@ public enum ConditionOperator: String, Codable, CaseIterable, Sendable, Hashable
         }
     }
 
-    /// "github.com/buffer/api" → ("github.com", "/buffer/api"); "/buffer" → ("", "/buffer").
+    /// "github.com/acme/api" → ("github.com", "/acme/api"); "/acme" → ("", "/acme").
     static func split(_ address: String) -> (host: String, path: String) {
         guard let slash = address.firstIndex(of: "/") else { return (address, "") }
         return (String(address[..<slash]), String(address[slash...]))
@@ -288,7 +288,7 @@ extension Condition {
         }
     }
 
-    /// A 0.1.4 Link condition ("github.com/buffer", is or is under) as the equivalent Domain and Path
+    /// A 0.1.4 Link condition ("github.com/acme", is or is under) as the equivalent Domain and Path
     /// conditions; nil for anything else.
     func splitIntoDomainAndPath() -> [Condition]? {
         guard field == .address, op == .isUnder else { return nil }
@@ -368,7 +368,7 @@ public struct Rule: Codable, Identifiable, Equatable, Hashable, Sendable {
 
 extension Rule {
     /// A link this rule matches that stands for every link it matches, built from its Domain and Path
-    /// conditions: Domain github.com plus Path /buffer gives https://github.com/buffer. Nil when one
+    /// conditions: Domain github.com plus Path /acme gives https://github.com/acme. Nil when one
     /// link can't stand for the rule (regexes, partial text, source apps, keys, "any" of several).
     public var sampleURL: URL? {
         guard matchMode == .all || conditions.count == 1 else { return nil }

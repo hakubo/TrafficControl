@@ -451,7 +451,7 @@ struct PickerView: View {
     @ObservedObject var model: PickerModel
     let maxWidth: CGFloat
 
-    /// "Chrome, Buffer profile, 2": parts that don't exist are left out.
+    /// "Chrome, Acme profile, 2": parts that don't exist are left out.
     private static func accessibilityLabel(for choice: BrowserChoice, shortcut: Int?) -> String {
         var parts: [String]
         if choice.deepLink != nil {
