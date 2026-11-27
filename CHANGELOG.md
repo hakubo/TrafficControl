@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
-- Slack channel, message, thread, file, list and canvas links open in the Slack app, jumping to the message. The first
-  link from a workspace looks up its ID on slack.com and remembers it; workspaces can also be added
-  or removed in Settings → Apps.
+- Slack links open in the Slack app: messages and threads (jumping to the message), channels, lists,
+  canvases, files and the Files page. The first link from a workspace looks up its ID on slack.com
+  and remembers it; workspaces can also be added or removed in Settings → Apps.
 
 ## 0.3.2
 
