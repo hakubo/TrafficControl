@@ -219,7 +219,7 @@ struct RulesSettingsView: View {
         let trimmed = testURL.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return "" }
         guard let url = URL(string: trimmed), url.host() != nil else { return "Not a valid link" }
-        if let (app, _) = AppLink.first(for: url), model.settings.appLinkMode(for: app.id) != .never {
+        if let (app, _) = AppLink.first(for: url, settings: model.settings), model.settings.appLinkMode(for: app.id) != .never {
             let when = model.settings.appLinkMode(for: app.id) == .whenRunning ? "if running" : "if installed"
             return "\(app.name) app (\(when)); else: " + ruleResult(url)
         }
@@ -332,11 +332,11 @@ private struct RuleRow: View {
         return destinationTitle
     }
 
-    /// "github.com/hakubo", "Source app is Slack", "buffer.com, +1 more".
+    /// "github.com/hakubo", "Source app is Slack", "acme.com, +1 more".
     private var summary: String {
         let filled = rule.conditions.filter { !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
         guard let first = filled.first else { return "No conditions yet" }
-        // Domain + path rules, as Create Rule makes them, read as one address: "github.com/buffer".
+        // Domain + path rules, as Create Rule makes them, read as one address: "github.com/acme".
         if filled.count == 2, rule.matchMode == .all, first.field == .host, first.op == .isDomain,
             filled[1].field == .path, filled[1].op == .isUnder
         {

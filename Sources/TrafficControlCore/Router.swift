@@ -84,7 +84,7 @@ public enum Router {
 
         // Desktop apps come before rules: each one is an explicit opt-in with its own setting,
         // and a broad rule (say, everything from Slack goes to Chrome) shouldn't swallow it.
-        if let (app, deepLink) = AppLink.first(for: context.url) {
+        if let (app, deepLink) = AppLink.first(for: context.url, settings: settings) {
             let available: Bool
             switch settings.appLinkMode(for: app.id) {
             case .whenRunning: available = env.runningAppIDs.contains(app.bundleID)

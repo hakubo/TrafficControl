@@ -131,7 +131,7 @@ final class BrowserManager: ObservableObject {
     /// What the picker shows: the desktop app for this link (if any), then the visible entries of `orderedChoices`.
     func pickerChoices(_ settings: AppSettings, for url: URL? = nil) -> [BrowserChoice] {
         var app: [BrowserChoice] = []
-        if let url, let (link, deepLink) = AppLink.first(for: url), settings.appLinkMode(for: link.id) != .never,
+        if let url, let (link, deepLink) = AppLink.first(for: url, settings: settings), settings.appLinkMode(for: link.id) != .never,
             let appURL = appURL(for: link.bundleID)
         {
             app = [BrowserChoice(browser: Browser(id: link.bundleID, name: link.name, appURL: appURL), profile: nil, deepLink: deepLink)]

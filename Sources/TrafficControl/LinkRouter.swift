@@ -67,53 +67,89 @@ final class LinkRouter {
         let forcePicker = current.forcePickerWithKey && held.contains(current.pickerModifier)
 
         for url in urls {
-            let context = LinkContext(
-                url: url, sourceBundleID: source?.bundleIdentifier, sourceAppName: source?.localizedName,
-                modifiers: held)
-            let environment = RoutingEnvironment(
-                installedBrowserIDs: Set(browsers.installed.map(\.id)),
-                installedProfiles: browsers.profiles.mapValues { Set($0.map(\.id)) },
-                runningBrowserIDs: browsers.runningBrowserIDs,
-                installedAppIDs: browsers.installedAppLinkIDs,
-                runningAppIDs: browsers.runningAppLinkIDs,
-                lastActiveBrowserID: browsers.lastActiveBrowserID,
-                forcePicker: forcePicker,
-                override: override)
-
-            let decision = Timing.measure("decide") { Router.decide(context, settings: current, environment: environment) }
-            Timing.note("\(url.host() ?? "?") -> \(decision)")
-            let overridden = override.map { $0.isActive(at: environment.now) && decision == .open($0.target, ruleID: nil) } ?? false
-
-            let searchOrder = tabSearchOrder(decision)
-            browsers.linkWork.enqueue { [self] in
-                // Already open somewhere? Go there instead of opening a duplicate. Desktop apps still win,
-                // the picker key skips this so the picker always appears, and so does a rule that asks
-                // for held keys: holding them says where you want the link. An override keeps links in
-                // its browser (say, the one being screen-shared), so it skips this too.
-                if current.tabReuse == .anyBrowser, !forcePicker, !decision.isApp, !overridden,
-                    !Self.ruleUsesKeys(decision, in: current.rules),
-                    await OpenTabFinder.reuse(url, in: searchOrder)
-                {
-                    return
-                }
-
-                switch decision {
-                case .open(let target, _):
-                    if let browser = browsers.browser(withID: target.browserID) {
-                        await browsers.openOrSwitchNow(
-                            url, in: browser, profileID: target.profileID, inBackground: false,
-                            reuseTab: current.tabReuse == .targetBrowser)
-                        if current.rememberDomains { history.record(url, destination: .browser(target)) }
+            if let (workspace, id) = SlackLink.workspaceShown(in: url), settings.settings.slackWorkspaces[workspace] == nil {
+                settings.settings.slackWorkspaces[workspace] = id
+            }
+            if !forcePicker, let workspace = slackWorkspaceToLearn(url, settings: current) {
+                // First link from this Slack workspace: learn its team ID, then route it as if it had been known.
+                Task { [self] in
+                    if let id = await SlackWorkspaceLookup.teamID(for: workspace) {
+                        settings.settings.slackWorkspaces[workspace] = id
                     } else {
-                        picker.enqueue(PickerRequest(url: url, sourceApp: source))
+                        failedSlackLookups.insert(workspace)
                     }
-                case .openInApp(let bundleID, let deepLink):
-                    browsers.openInApp(deepLink, bundleID: bundleID)
-                    if current.rememberDomains { history.record(url, destination: .app(bundleID: bundleID)) }
-                case .ask:
+                    decide(url, source: source, held: held, forcePicker: forcePicker, settings: settings.settings)
+                }
+                continue
+            }
+            decide(url, source: source, held: held, forcePicker: forcePicker, settings: current)
+        }
+    }
+
+    private func decide(_ url: URL, source: NSRunningApplication?, held: Set<ModifierKey>, forcePicker: Bool, settings current: AppSettings) {
+        let context = LinkContext(
+            url: url, sourceBundleID: source?.bundleIdentifier, sourceAppName: source?.localizedName,
+            modifiers: held)
+        let environment = RoutingEnvironment(
+            installedBrowserIDs: Set(browsers.installed.map(\.id)),
+            installedProfiles: browsers.profiles.mapValues { Set($0.map(\.id)) },
+            runningBrowserIDs: browsers.runningBrowserIDs,
+            installedAppIDs: browsers.installedAppLinkIDs,
+            runningAppIDs: browsers.runningAppLinkIDs,
+            lastActiveBrowserID: browsers.lastActiveBrowserID,
+            forcePicker: forcePicker,
+            override: override)
+
+        let decision = Timing.measure("decide") { Router.decide(context, settings: current, environment: environment) }
+        Timing.note("\(url.host() ?? "?") -> \(decision)")
+        let overridden = override.map { $0.isActive(at: environment.now) && decision == .open($0.target, ruleID: nil) } ?? false
+
+        let searchOrder = tabSearchOrder(decision)
+        browsers.linkWork.enqueue { [self] in
+            // Already open somewhere? Go there instead of opening a duplicate. Desktop apps still win,
+            // the picker key skips this so the picker always appears, and so does a rule that asks
+            // for held keys: holding them says where you want the link. An override keeps links in
+            // its browser (say, the one being screen-shared), so it skips this too.
+            if current.tabReuse == .anyBrowser, !forcePicker, !decision.isApp, !overridden,
+                !Self.ruleUsesKeys(decision, in: current.rules),
+                await OpenTabFinder.reuse(url, in: searchOrder)
+            {
+                return
+            }
+
+            switch decision {
+            case .open(let target, _):
+                if let browser = browsers.browser(withID: target.browserID) {
+                    await browsers.openOrSwitchNow(
+                        url, in: browser, profileID: target.profileID, inBackground: false,
+                        reuseTab: current.tabReuse == .targetBrowser)
+                    if current.rememberDomains { history.record(url, destination: .browser(target)) }
+                } else {
                     picker.enqueue(PickerRequest(url: url, sourceApp: source))
                 }
+            case .openInApp(let bundleID, let deepLink):
+                browsers.openInApp(deepLink, bundleID: bundleID)
+                if current.rememberDomains { history.record(url, destination: .app(bundleID: bundleID)) }
+            case .ask:
+                picker.enqueue(PickerRequest(url: url, sourceApp: source))
             }
+        }
+    }
+
+    /// Workspaces whose lookup failed this session, so their links don't wait on Slack again.
+    private var failedSlackLookups: Set<String> = []
+
+    /// A Slack workspace worth looking up: its link would go to the Slack app if the team ID were known.
+    private func slackWorkspaceToLearn(_ url: URL, settings current: AppSettings) -> String? {
+        guard let workspace = SlackLink.workspaceToLearn(url, settings: current),
+            !failedSlackLookups.contains(workspace),
+            override.map({ !$0.isActive(at: .now) }) ?? true
+        else { return nil }
+        let slack = AppLink.slack.bundleID
+        switch current.appLinkMode(for: AppLink.slack.id) {
+        case .whenInstalled: return browsers.installedAppLinkIDs.contains(slack) ? workspace : nil
+        case .whenRunning: return browsers.runningAppLinkIDs.contains(slack) ? workspace : nil
+        case .never: return nil
         }
     }
 

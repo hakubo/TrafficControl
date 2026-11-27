@@ -318,27 +318,27 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
 }
 
 @Suite struct AppLinkTests {
-    private let linearURL = URL(string: "https://linear.app/buffer/project/retool-and-classic-admin-migration-a02fd684c5c4/activity#project-update-f9e936e0")!
+    private let linearURL = URL(string: "https://linear.app/acme/project/website-redesign-0a1b2c3d4e5f/activity#project-update-1a2b3c4d")!
 
     @Test func linearKeepsPathAndFragment() {
         #expect(
             AppLink.linear.deepLink(linearURL)?.absoluteString
-                == "linear://buffer/project/retool-and-classic-admin-migration-a02fd684c5c4/activity#project-update-f9e936e0")
+                == "linear://acme/project/website-redesign-0a1b2c3d4e5f/activity#project-update-1a2b3c4d")
         #expect(
-            AppLink.linear.deepLink(URL(string: "https://linear.app/buffer/issue/ENG-12?tab=x")!)?.absoluteString
-                == "linear://buffer/issue/ENG-12?tab=x")
+            AppLink.linear.deepLink(URL(string: "https://linear.app/acme/issue/ENG-12?tab=x")!)?.absoluteString
+                == "linear://acme/issue/ENG-12?tab=x")
     }
 
     @Test func linearIgnoresMarketingPages() {
         #expect(AppLink.linear.deepLink(URL(string: "https://linear.app/pricing")!) == nil)
         #expect(AppLink.linear.deepLink(URL(string: "https://linear.app/changelog/2024-01-01-x")!) == nil)
-        #expect(AppLink.linear.deepLink(URL(string: "https://evil.com/buffer/issue/ENG-1")!) == nil)
+        #expect(AppLink.linear.deepLink(URL(string: "https://evil.com/acme/issue/ENG-1")!) == nil)
     }
 
     @Test func notionZoomSpotify() {
         #expect(
-            AppLink.notion.deepLink(URL(string: "https://www.notion.so/buffer/Roadmap-0123456789abcdef0123456789abcdef?pvs=4")!)?.absoluteString
-                == "notion://www.notion.so/buffer/Roadmap-0123456789abcdef0123456789abcdef?pvs=4")
+            AppLink.notion.deepLink(URL(string: "https://www.notion.so/acme/Roadmap-0123456789abcdef0123456789abcdef?pvs=4")!)?.absoluteString
+                == "notion://www.notion.so/acme/Roadmap-0123456789abcdef0123456789abcdef?pvs=4")
         #expect(AppLink.notion.deepLink(URL(string: "https://www.notion.so/product")!) == nil)
         #expect(
             AppLink.zoom.deepLink(URL(string: "https://us02web.zoom.us/j/8812345678?pwd=abc")!)?.absoluteString
@@ -360,6 +360,99 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         #expect(AppLink.figma.deepLink(URL(string: "https://www.figma.com/community/file/1234567890")!) == nil)
         #expect(AppLink.figma.deepLink(URL(string: "https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/image/abc123")!) == nil)
         #expect(AppLink.figma.deepLink(URL(string: "https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/X?openInBrowser=1")!) == nil)
+    }
+
+    @Test func slackNeedsAKnownWorkspace() {
+        var s = AppSettings()
+        let thread = URL(string: "https://acme.slack.com/archives/C0456EFGH/p1700000100654321?thread_ts=1700000000.123456&cid=C0456EFGH")!
+        #expect(AppLink.slack.deepLink(thread, settings: s) == nil)
+
+        s.slackWorkspaces["acme"] = "T0123ABCD"
+        #expect(
+            AppLink.slack.deepLink(thread, settings: s)?.absoluteString
+                == "slack://channel?team=T0123ABCD&id=C0456EFGH&message=1700000100.654321&thread_ts=1700000000.123456")
+        #expect(
+            AppLink.slack.deepLink(URL(string: "https://Acme.slack.com/archives/C0456EFGH/p1700000100654321")!, settings: s)?.absoluteString
+                == "slack://channel?team=T0123ABCD&id=C0456EFGH&message=1700000100.654321")
+        #expect(
+            AppLink.slack.deepLink(URL(string: "https://acme.slack.com/archives/C0456EFGH")!, settings: s)?.absoluteString
+                == "slack://channel?team=T0123ABCD&id=C0456EFGH")
+        #expect(AppLink.slack.deepLink(URL(string: "https://other.slack.com/archives/C0456EFGH")!, settings: s) == nil)
+        #expect(AppLink.slack.deepLink(URL(string: "https://acme.slack.com/team/U0123ABCD")!, settings: s) == nil)
+        #expect(AppLink.slack.deepLink(URL(string: "https://acme.slack.com.evil.com/archives/C0456EFGH")!, settings: s) == nil)
+        #expect(AppLink.first(for: thread, settings: s)?.0.id == "slack")
+    }
+
+    @Test func slackFileLinks() {
+        var s = AppSettings()
+        s.slackWorkspaces["acme"] = "T0123ABCD"
+        #expect(
+            AppLink.slack.deepLink(URL(string: "https://acme.slack.com/files/U0123ABCD/F0789IJKL/report.pdf")!, settings: s)?.absoluteString
+                == "slack://file?team=T0123ABCD&id=F0789IJKL")
+        #expect(
+            AppLink.slack.deepLink(URL(string: "https://acme.slack.com/files/U0123ABCD/F0789IJKL")!, settings: s)?.absoluteString
+                == "slack://file?team=T0123ABCD&id=F0789IJKL")
+        #expect(
+            AppLink.slack.deepLink(URL(string: "https://acme.slack.com/files")!, settings: s)?.absoluteString
+                == "slack://files?team=T0123ABCD")
+        #expect(
+            AppLink.slack.deepLink(URL(string: "https://acme.slack.com/files/U0123ABCD")!, settings: s)?.absoluteString
+                == "slack://files?team=T0123ABCD")
+        #expect(AppLink.slack.deepLink(URL(string: "https://acme.slack.com/filesystem")!, settings: s) == nil)
+        #expect(SlackLink.workspaceToLearn(URL(string: "https://other.slack.com/files")!, settings: s) == "other")
+    }
+
+    @Test func slackListsAndCanvasesCarryTheTeam() {
+        let s = AppSettings()
+        let list = URL(string: "https://acme.slack.com/lists/T0123ABCD/F0789IJKL")!
+        #expect(AppLink.slack.deepLink(list, settings: s)?.absoluteString == "slack://list?team=T0123ABCD&id=F0789IJKL")
+        #expect(
+            AppLink.slack.deepLink(URL(string: "https://acme.slack.com/docs/T0123ABCD/F0789IJKL")!, settings: s)?.absoluteString
+                == "slack://doc?team=T0123ABCD&id=F0789IJKL")
+        #expect(SlackLink.workspaceToLearn(list, settings: s) == nil)
+        #expect(SlackLink.workspaceShown(in: list).map { "\($0.subdomain) \($0.teamID)" } == "acme T0123ABCD")
+        #expect(SlackLink.workspaceShown(in: URL(string: "https://app.slack.com/client/T0123ABCD/C0456EFGH")!) == nil)
+        #expect(SlackLink.workspaceShown(in: URL(string: "https://acme.slack.com/archives/C0456EFGH")!) == nil)
+    }
+
+    @Test func slackClientLinksCarryTheTeam() {
+        let s = AppSettings()
+        #expect(
+            AppLink.slack.deepLink(URL(string: "https://app.slack.com/client/T0123ABCD/C0456EFGH")!, settings: s)?.absoluteString
+                == "slack://channel?team=T0123ABCD&id=C0456EFGH")
+        #expect(
+            AppLink.slack.deepLink(URL(string: "https://app.slack.com/client/T0123ABCD/C0456EFGH/thread/C0456EFGH-1700000000.123456")!, settings: s)?.absoluteString
+                == "slack://channel?team=T0123ABCD&id=C0456EFGH&message=1700000000.123456&thread_ts=1700000000.123456")
+        #expect(AppLink.slack.deepLink(URL(string: "https://app.slack.com/client/T0123ABCD/unreads")!, settings: s) == nil)
+    }
+
+    @Test func slackWorkspaceToLearn() {
+        var s = AppSettings()
+        let permalink = URL(string: "https://acme.slack.com/archives/C0456EFGH/p1700000100654321")!
+        #expect(SlackLink.workspaceToLearn(permalink, settings: s) == "acme")
+        #expect(SlackLink.workspaceToLearn(URL(string: "https://app.slack.com/client/T0123ABCD/C0456EFGH")!, settings: s) == nil)
+        #expect(SlackLink.workspaceToLearn(URL(string: "https://acme.slack.com/")!, settings: s) == nil)
+        s.slackWorkspaces["acme"] = "T0123ABCD"
+        #expect(SlackLink.workspaceToLearn(permalink, settings: s) == nil)
+    }
+
+    @Test func slackFindTeamResponse() {
+        let ok = #"{"ok":true,"team_id":"T0123ABCD","url":"https:\/\/acme.slack.com\/","team_name":"Acme"}"#
+        #expect(SlackLink.teamID(fromFindTeamResponse: Data(ok.utf8)) == "T0123ABCD")
+        #expect(SlackLink.teamID(fromFindTeamResponse: Data(#"{"ok":false,"error":"team_not_found"}"#.utf8)) == nil)
+        #expect(SlackLink.teamID(fromFindTeamResponse: Data(#"{"ok":true,"team_id":"nope"}"#.utf8)) == nil)
+        #expect(SlackLink.teamID(fromFindTeamResponse: Data("<html>".utf8)) == nil)
+    }
+
+    @Test func slackWorkspaceInputParsing() {
+        #expect(AppSettings.slackWorkspace(from: " Acme ") == "acme")
+        #expect(AppSettings.slackWorkspace(from: "acme.slack.com") == "acme")
+        #expect(AppSettings.slackWorkspace(from: "https://acme.slack.com/archives/C1") == "acme")
+        #expect(AppSettings.slackWorkspace(from: "app.slack.com") == nil)
+        #expect(AppSettings.slackWorkspace(from: "") == nil)
+        #expect(AppSettings.slackTeamID(from: "T0123ABCD") == "T0123ABCD")
+        #expect(AppSettings.slackTeamID(from: "https://app.slack.com/client/T0123ABCD/C0456EFGH") == "T0123ABCD")
+        #expect(AppSettings.slackTeamID(from: "C0456EFGH") == nil)
     }
 
     @Test func routesToAppOnlyWhenModeAllows() {
@@ -411,7 +504,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
 
     @Test func preferredBrowserSkipsAppDestinations() {
         var h = LinkHistory()
-        let url = URL(string: "https://linear.app/buffer/issue/X-1")!
+        let url = URL(string: "https://linear.app/acme/issue/X-1")!
         h.record(url, destination: .app(bundleID: "com.linear"))
         h.record(url, destination: .app(bundleID: "com.linear"))
         h.record(url, destination: work)
@@ -450,7 +543,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
 
     @Test func ignoresCosmeticDifferences() {
         #expect(same("https://www.GitHub.com/apple/swift/", "http://github.com/apple/swift"))
-        #expect(same("https://linear.app/buffer/project/x/activity#project-update-1", "https://linear.app/buffer/project/x/activity"))
+        #expect(same("https://linear.app/acme/project/x/activity#project-update-1", "https://linear.app/acme/project/x/activity"))
         #expect(same("https://a.com/p?id=1&utm_source=slack&fbclid=z", "https://a.com/p?id=1"))
     }
 
@@ -479,14 +572,14 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     private let work = BrowserTarget(browserID: chrome, profileID: "Profile 2")
 
     @Test func domainAndPathRuleMatchesWholeSegmentsOnly() {
-        let rule = Rule.forAddress("github.com/buffer", to: work)
+        let rule = Rule.forAddress("github.com/acme", to: work)
         #expect(rule.conditions.map(\.field) == [.host, .path])
-        #expect(rule.matches(link("https://github.com/buffer")))
-        #expect(rule.matches(link("https://www.github.com/buffer/api/pull/88?w=1")))
-        #expect(rule.matches(link("https://GitHub.com/Buffer/")))
-        #expect(!rule.matches(link("https://github.com/buffer-labs")))
+        #expect(rule.matches(link("https://github.com/acme")))
+        #expect(rule.matches(link("https://www.github.com/acme/api/pull/88?w=1")))
+        #expect(rule.matches(link("https://GitHub.com/Acme/")))
+        #expect(!rule.matches(link("https://github.com/acme-labs")))
         #expect(!rule.matches(link("https://github.com/hakubo")))
-        #expect(!rule.matches(link("https://gitlab.com/buffer")))
+        #expect(!rule.matches(link("https://gitlab.com/acme")))
     }
 
     @Test func rulesFromPastedURLsAndBareDomains() {
@@ -499,36 +592,36 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     @Test func linkConditionsFrom014LoadAsDomainAndPath() throws {
         let json = #"""
             {"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"Work","isEnabled":true,"matchMode":"any",
-             "conditions":[{"id":"7F9619FF-8B86-D011-B42D-00C04FC964FF","field":"address","op":"isUnder","value":"github.com/buffer"}],
+             "conditions":[{"id":"7F9619FF-8B86-D011-B42D-00C04FC964FF","field":"address","op":"isUnder","value":"github.com/acme"}],
              "action":{"ask":{}}}
             """#
         let rule = try JSONDecoder().decode(Rule.self, from: Data(json.utf8))
         #expect(rule.matchMode == .all)
         #expect(rule.conditions.map(\.field) == [.host, .path])
         #expect(rule.conditions.map(\.op) == [.isDomain, .isUnder])
-        #expect(rule.conditions.map(\.value) == ["github.com", "/buffer"])
-        #expect(rule.matches(link("https://github.com/buffer/x")))
+        #expect(rule.conditions.map(\.value) == ["github.com", "/acme"])
+        #expect(rule.matches(link("https://github.com/acme/x")))
         #expect(!rule.matches(link("https://github.com/hakubo")))
     }
 
     @Test func pathIsOrIsUnderWithOrWithoutSlash() {
-        #expect(Condition(field: .path, op: .isUnder, value: "buffer").matches(link("https://github.com/buffer/api")))
-        #expect(Condition(field: .path, op: .isUnder, value: "/buffer/").matches(link("https://github.com/buffer")))
-        #expect(!Condition(field: .path, op: .isUnder, value: "/buffer").matches(link("https://github.com/bufferx")))
+        #expect(Condition(field: .path, op: .isUnder, value: "acme").matches(link("https://github.com/acme/api")))
+        #expect(Condition(field: .path, op: .isUnder, value: "/acme/").matches(link("https://github.com/acme")))
+        #expect(!Condition(field: .path, op: .isUnder, value: "/acme").matches(link("https://github.com/acmex")))
     }
 
     @Test func personalAndWorkGitHubRules() {
         var s = AppSettings()
         s.rules = [
             Rule.forAddress("github.com/hakubo", to: personal),
-            Rule.forAddress("github.com/buffer", to: work),
+            Rule.forAddress("github.com/acme", to: work),
         ]
         let env = RoutingEnvironment(installedBrowserIDs: installed, installedProfiles: [chrome: ["Default", "Profile 2"]])
         #expect(
             Router.decide(link("https://github.com/hakubo/TrafficControl"), settings: s, environment: env)
                 == .open(personal, ruleID: s.rules[0].id))
         #expect(
-            Router.decide(link("https://github.com/buffer/web/pull/1"), settings: s, environment: env)
+            Router.decide(link("https://github.com/acme/web/pull/1"), settings: s, environment: env)
                 == .open(work, ruleID: s.rules[1].id))
         #expect(Router.decide(link("https://github.com/apple/swift"), settings: s, environment: env) == .ask)
     }
@@ -541,7 +634,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     }
 
     @Test func rememberedPickUpdatesTheDomainRuleOrAddsOne() {
-        var rules = [Rule.forAddress("github.com/buffer", to: work), Rule.forAddress("example.com", to: nil)]
+        var rules = [Rule.forAddress("github.com/acme", to: work), Rule.forAddress("example.com", to: nil)]
         rules[1].isEnabled = false
         // An existing rule for just the domain is reused and switched on.
         let id = rules.remember(URL(string: "https://www.example.com/a?b")!, to: personal)
@@ -552,7 +645,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         catchAll.action = .ask
         rules.append(catchAll)
         rules.remember(URL(string: "https://github.com/apple/swift")!, to: personal)
-        #expect(rules.map(\.name) == ["github.com/buffer", "example.com", "github.com", "everything"])
+        #expect(rules.map(\.name) == ["github.com/acme", "example.com", "github.com", "everything"])
         #expect(rules.remember(URL(string: "mailto:a@b.c")!, to: personal) == nil)
     }
 
@@ -566,12 +659,12 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     @Test func historyRemembersChoicePerPath() {
         var h = LinkHistory()
         let t0 = Date(timeIntervalSince1970: 0)
-        for i in 0..<3 { h.record(URL(string: "https://github.com/buffer/r\(i)")!, destination: .browser(work), picked: true, at: t0 + Double(i)) }
+        for i in 0..<3 { h.record(URL(string: "https://github.com/acme/r\(i)")!, destination: .browser(work), picked: true, at: t0 + Double(i)) }
         h.record(URL(string: "https://github.com/hakubo/x")!, destination: .browser(personal), picked: true, at: t0 + 10)
         #expect(h.preferred(for: URL(string: "https://github.com/hakubo/y")!) == .browser(personal))
-        #expect(h.preferred(for: URL(string: "https://github.com/buffer/z")!) == .browser(work))
+        #expect(h.preferred(for: URL(string: "https://github.com/acme/z")!) == .browser(work))
         #expect(h.preferred(for: URL(string: "https://github.com/apple")!) == .browser(work))
-        // buffer went where github.com usually goes, so only hakubo needs a path entry.
+        // acme went where github.com usually goes, so only hakubo needs a path entry.
         #expect(h.records["github.com"]?.paths.map(\.segment) == ["hakubo"])
         h.record(URL(string: "https://github.com/hakubo/z")!, destination: .browser(personal), picked: true, at: t0 + 11)
         #expect(h.records["github.com"]?.paths.first?.visits == 2)
@@ -599,7 +692,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
         let json =
             #"{"records":{"github.com":{"domain":"github.com","visits":3,"lastOpened":0,"lastDestination":\#(w),"#
             + #""destinations":[{"destination":\#(w),"count":2},{"destination":\#(p),"count":1}],"#
-            + #""paths":[\#(path("buffer", w)),\#(path("apple", w)),\#(path("hakubo", p))]}}}"#
+            + #""paths":[\#(path("acme", w)),\#(path("apple", w)),\#(path("hakubo", p))]}}}"#
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try Data(json.utf8).write(to: store.fileURL)
         let h = store.load()
@@ -679,7 +772,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     }
 
     @Test func sampleURLComesFromDomainAndPath() {
-        #expect(Rule.forAddress("github.com/buffer", to: nil).sampleURL?.absoluteString == "https://github.com/buffer")
+        #expect(Rule.forAddress("github.com/acme", to: nil).sampleURL?.absoluteString == "https://github.com/acme")
         #expect(Rule.forAddress("github.com", to: nil).sampleURL?.absoluteString == "https://github.com")
         var off = Rule.forAddress("github.com", to: nil)
         off.isEnabled = false
@@ -689,7 +782,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
     @Test func noSampleWhenOneLinkCannotStandForTheRule() {
         let regex = Rule(conditions: [Condition(field: .host, op: .regex, value: "git.*")])
         let partial = Rule(conditions: [Condition(field: .host, op: .contains, value: "git")])
-        let pathOnly = Rule(conditions: [Condition(field: .path, op: .isUnder, value: "/buffer")])
+        let pathOnly = Rule(conditions: [Condition(field: .path, op: .isUnder, value: "/acme")])
         let withApp = Rule(conditions: [
             Condition(field: .host, op: .isDomain, value: "github.com"),
             Condition(field: .sourceApp, op: .equals, value: "Slack"),
@@ -702,7 +795,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
             matchMode: .any,
             conditions: [
                 Condition(field: .host, op: .isDomain, value: "github.com"),
-                Condition(field: .path, op: .isUnder, value: "/buffer"),
+                Condition(field: .path, op: .isUnder, value: "/acme"),
             ])
         let empty = Rule(conditions: [Condition(field: .host, op: .isDomain, value: "")])
         for rule in [regex, partial, pathOnly, withApp, withKeys, anyOf, empty] {
@@ -712,7 +805,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
 
     @Test func broaderEarlierRuleShadowsALaterPathRule() {
         let domain = Rule.forAddress("github.com", to: BrowserTarget(browserID: chrome))
-        let path = Rule.forAddress("github.com/buffer", to: BrowserTarget(browserID: safari))
+        let path = Rule.forAddress("github.com/acme", to: BrowserTarget(browserID: safari))
         let shadow = path.shadowingRule(in: [domain, path])
         #expect(shadow?.index == 0)
         #expect(shadow?.rule.id == domain.id)
@@ -729,7 +822,7 @@ private func link(_ string: String, from source: String? = nil, name: String? = 
             Condition(field: .host, op: .isDomain, value: "github.com"),
             Condition(field: .modifiers, op: .includeKeys, value: "⌘"),
         ])
-        let path = Rule.forAddress("github.com/buffer", to: nil)
+        let path = Rule.forAddress("github.com/acme", to: nil)
         #expect(path.shadowingRule(in: [domain, other, keyed, path]) == nil)
         // A regex-only rule has no sample, so it is never reported as shadowed.
         let regex = Rule(conditions: [Condition(field: .url, op: .regex, value: "github")])

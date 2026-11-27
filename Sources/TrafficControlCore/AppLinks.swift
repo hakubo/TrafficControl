@@ -21,16 +21,33 @@ public struct AppLink: Identifiable, Sendable {
     public let name: String
     public let bundleID: String
     public let summary: String
-    /// Returns the deep link for URLs this app handles, nil otherwise.
-    public let deepLink: @Sendable (URL) -> URL?
+    /// Returns the deep link for URLs this app handles, nil otherwise. Settings carry per-app
+    /// configuration, such as the Slack workspace IDs.
+    let resolve: @Sendable (URL, AppSettings) -> URL?
+
+    init(id: String, name: String, bundleID: String, summary: String, resolve: @escaping @Sendable (URL, AppSettings) -> URL?) {
+        self.id = id
+        self.name = name
+        self.bundleID = bundleID
+        self.summary = summary
+        self.resolve = resolve
+    }
+
+    init(id: String, name: String, bundleID: String, summary: String, deepLink: @escaping @Sendable (URL) -> URL?) {
+        self.init(id: id, name: name, bundleID: bundleID, summary: summary) { url, _ in deepLink(url) }
+    }
+
+    public func deepLink(_ url: URL, settings: AppSettings = AppSettings()) -> URL? {
+        resolve(url, settings)
+    }
 }
 
 extension AppLink {
-    public static let all: [AppLink] = [linear, notion, figma, zoom, spotify]
+    public static let all: [AppLink] = [linear, notion, figma, zoom, spotify, slack]
 
-    public static func first(for url: URL) -> (AppLink, URL)? {
+    public static func first(for url: URL, settings: AppSettings) -> (AppLink, URL)? {
         for app in all {
-            if let link = app.deepLink(url) { return (app, link) }
+            if let link = app.deepLink(url, settings: settings) { return (app, link) }
         }
         return nil
     }
@@ -99,6 +116,48 @@ extension AppLink {
         return URL(string: "spotify:\(match.1):\(match.2)")
     }
 
+    /// Slack only opens slack:// links, and those need the workspace's team ID. app.slack.com/client
+    /// links carry it; <workspace>.slack.com permalinks don't, so `AppSettings.slackWorkspaces` maps
+    /// the subdomain to it (TrafficControl looks it up the first time, see `SlackLink.workspaceToLearn`).
+    /// Workspaces without an entry stay in the browser.
+    public static let slack = AppLink(
+        id: "slack", name: "Slack", bundleID: "com.tinyspeck.slackmacgap",
+        summary: "Channels, messages, threads, files, lists and canvases on <workspace>.slack.com"
+    ) { url, settings in
+        guard let link = SlackLink(url) else { return nil }
+        let team: String
+        switch link.workspace {
+        case .teamID(let id): team = id
+        case .subdomain(let name):
+            guard let id = settings.slackTeamID(forWorkspace: name) else { return nil }
+            team = id
+        }
+        var components = URLComponents()
+        components.scheme = "slack"
+        let teamItem = URLQueryItem(name: "team", value: team)
+        switch link.target {
+        case .channel(let channel, let message, let thread):
+            components.host = "channel"
+            components.queryItems = [teamItem, URLQueryItem(name: "id", value: channel)]
+            if let message { components.queryItems?.append(URLQueryItem(name: "message", value: message)) }
+            if let thread { components.queryItems?.append(URLQueryItem(name: "thread_ts", value: thread)) }
+        case .file(let id):
+            components.host = "file"
+            components.queryItems = [teamItem, URLQueryItem(name: "id", value: id)]
+        case .list(let id):
+            components.host = "list"
+            components.queryItems = [teamItem, URLQueryItem(name: "id", value: id)]
+        case .canvas(let id):
+            // What Slack itself uses to hand a canvas over to the desktop app.
+            components.host = "doc"
+            components.queryItems = [teamItem, URLQueryItem(name: "id", value: id)]
+        case .files:
+            components.host = "files"
+            components.queryItems = [teamItem]
+        }
+        return components.url
+    }
+
     /// The percent-encoded path, plus "?query#fragment" as they appeared, for http(s) links on one of `hosts`.
     private static func webParts(_ url: URL, hosts: Set<String>) -> (path: String, suffix: String)? {
         guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
@@ -109,5 +168,99 @@ extension AppLink {
         if let query = components.percentEncodedQuery { suffix += "?" + query }
         if let fragment = components.percentEncodedFragment { suffix += "#" + fragment }
         return (components.percentEncodedPath, suffix)
+    }
+}
+
+/// A Slack channel, message or thread link from the web.
+public struct SlackLink: Equatable, Sendable {
+    public enum Workspace: Equatable, Sendable {
+        /// "acme" for acme.slack.com.
+        case subdomain(String)
+        /// From an app.slack.com/client/<team>/… link.
+        case teamID(String)
+    }
+
+    public enum Target: Equatable, Sendable {
+        /// A channel, or a message in it; timestamps look like "1700000100.654321".
+        case channel(String, message: String?, thread: String?)
+        /// One file, by its F… ID.
+        case file(String)
+        /// A list, by its F… ID.
+        case list(String)
+        /// A canvas, by its F… ID.
+        case canvas(String)
+        /// Any other page under /files.
+        case files
+    }
+
+    public let workspace: Workspace
+    public let target: Target
+
+    public init?(_ url: URL) {
+        guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+            let host = url.host()?.lowercased(), host.hasSuffix(".slack.com")
+        else { return nil }
+        let path = url.path()
+        if host == "app.slack.com" {
+            // app.slack.com/client/T…/C…[/thread/C…-1700000000.123456]
+            guard let match = path.firstMatch(of: #/^\/client\/([TE][A-Z0-9]+)\/([CGD][A-Z0-9]+)(?:\/thread\/[CGD][A-Z0-9]+-(\d+\.\d+))?\/?$/#)
+            else { return nil }
+            workspace = .teamID(String(match.1))
+            let message = match.3.map(String.init)
+            target = .channel(String(match.2), message: message, thread: message)
+            return
+        }
+        let subdomain = String(host.dropLast(".slack.com".count))
+        guard subdomain != "app", !subdomain.isEmpty else { return nil }
+        // <workspace>.slack.com/lists/T…/F… and /docs/T…/F… carry the team ID themselves.
+        if let match = path.firstMatch(of: #/^\/(lists|docs)\/([TE][A-Z0-9]+)\/(F[A-Z0-9]+)(?:\/|$)/#) {
+            workspace = .teamID(String(match.2))
+            target = match.1 == "lists" ? .list(String(match.3)) : .canvas(String(match.3))
+            return
+        }
+        if let match = path.firstMatch(of: #/^\/archives\/([CGD][A-Z0-9]+)(?:\/p(\d{7,}))?\/?$/#) {
+            // p1700000100654321 is the message timestamp 1700000100.654321 without its dot.
+            let message = match.2.map { String($0.dropLast(6) + "." + $0.suffix(6)) }
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let thread = message == nil ? nil
+                : query.first(where: { $0.name == "thread_ts" })?.value.flatMap { $0.wholeMatch(of: #/\d+\.\d+/#) != nil ? $0 : nil }
+            target = .channel(String(match.1), message: message, thread: thread)
+        } else if let match = path.firstMatch(of: #/^\/files\/[UW][A-Z0-9]+\/(F[A-Z0-9]+)(?:\/|$)/#) {
+            target = .file(String(match.1))
+        } else if path == "/files" || path.hasPrefix("/files/") {
+            target = .files
+        } else {
+            return nil
+        }
+        workspace = .subdomain(subdomain)
+    }
+
+    /// The subdomain whose team ID TrafficControl should look up before routing `url`, if any.
+    public static func workspaceToLearn(_ url: URL, settings: AppSettings) -> String? {
+        guard case .subdomain(let name)? = SlackLink(url)?.workspace,
+            settings.slackTeamID(forWorkspace: name) == nil
+        else { return nil }
+        return name
+    }
+
+    /// A workspace subdomain and team ID that a link shows together (acme.slack.com/lists/T…/…),
+    /// so TrafficControl can remember the workspace without asking Slack.
+    public static func workspaceShown(in url: URL) -> (subdomain: String, teamID: String)? {
+        guard let host = url.host()?.lowercased(), host.hasSuffix(".slack.com"), host != "app.slack.com",
+            case .teamID(let team)? = SlackLink(url)?.workspace
+        else { return nil }
+        return (String(host.dropLast(".slack.com".count)), team)
+    }
+
+    /// The team ID in a response from slack.com/api/auth.findTeam.
+    public static func teamID(fromFindTeamResponse data: Data) -> String? {
+        struct Response: Decodable {
+            let ok: Bool
+            let team_id: String?
+        }
+        guard let response = try? JSONDecoder().decode(Response.self, from: data), response.ok,
+            let id = response.team_id
+        else { return nil }
+        return AppSettings.slackTeamID(from: id)
     }
 }

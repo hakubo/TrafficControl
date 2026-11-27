@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- Slack links open in the Slack app: messages and threads (jumping to the message), channels, lists,
+  canvases, files and the Files page. The first link from a workspace looks up its ID on slack.com
+  and remembers it; workspaces can also be added or removed in Settings → Apps.
+
 ## 0.3.2
 
 - Checking for an already-open tab no longer freezes the picker or Settings. If a browser takes too
@@ -91,19 +97,19 @@
 - If another app becomes your default browser, the menu bar icon gets an orange dot and its menu
   says links aren't reaching TrafficControl.
 - Path rules are back to two plain conditions: Domain and Path. Create Rule makes
-  "Domain is github.com, including subdomains" and "Path is /buffer, including sub-paths".
+  "Domain is github.com, including subdomains" and "Path is /acme, including sub-paths".
   Rules made with the Link condition in 0.1.4 are converted automatically.
 - Clearer option names: "is, including subdomains" for domains and "is, including sub-paths" for paths,
   instead of "is or is under".
 
 ## 0.1.4
 
-- Rules can target a path: a rule for `github.com/buffer` sends that page and everything below it
-  (`github.com/buffer/api/pull/1`) to one browser or profile, while `github.com/hakubo` goes to another.
+- Rules can target a path: a rule for `github.com/acme` sends that page and everything below it
+  (`github.com/acme/api/pull/1`) to one browser or profile, while `github.com/hakubo` goes to another.
   New rules start with a Link condition that takes a domain or a domain plus path; you can paste a full URL.
 - A new path rule goes above broader rules that would otherwise catch its links first.
 - Recent Domains lists the paths you open on each domain, with where they went and a button to make a rule.
-- The picker remembers your choice per path, so github.com/buffer and github.com/hakubo can each have their own.
+- The picker remembers your choice per path, so github.com/acme and github.com/hakubo can each have their own.
 - Type a link into the tester under Rules and use Create Rule to make a rule for its domain or one of its paths.
 
 ## 0.1.3
